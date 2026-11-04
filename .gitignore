@@ -1,0 +1,39 @@
+# Credentials and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+credentials.json
+.credentials.json
+secrets.json
+.netrc
+.pypirc
+.aws/
+
+# Local Claude Code settings. The shared project files in .claude/ stay tracked.
+.claude/settings.local.json
+.claude/.credentials.json
+.claude.json
+CLAUDE.local.md
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.cache/
+.npm/
+.eslintcache
