@@ -16,10 +16,14 @@ set -euo pipefail
 # verify_openspec_pin reports a mismatch.
 readonly OPENSPEC_VERSION="1.16.0"
 readonly CLAUDE_CHANNEL="stable"
+
+# Python Software Factory development tools.
+readonly PYTEST_VERSION="9.2.0"
+readonly PYTEST_COV_VERSION="7.1.0"
+readonly RUFF_VERSION="0.17.5"
 readonly APT_PACKAGES=(doxygen graphviz)
 readonly DOCKER_WAIT_SECONDS=60
 readonly DOCKER_RUN_TIMEOUT_SECONDS=180
-
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly REPO_ROOT
 readonly CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
@@ -112,6 +116,25 @@ install_claude_code() {
   hash -r
 }
 
+# Install Python tools into the project's isolated virtual environment.
+# Safe to rerun. Does not modify system Python.
+install_python_tools() {
+  log "Installing Python Software Factory development tools"
+
+  local venv_dir="${REPO_ROOT}/.venv"
+
+  if [[ ! -x "${venv_dir}/bin/python" ]]; then
+    python3 -m venv "${venv_dir}"
+  fi
+
+  "${venv_dir}/bin/python" -m pip install \
+    "pytest==${PYTEST_VERSION}" \
+    "pytest-cov==${PYTEST_COV_VERSION}" \
+    "ruff==${RUFF_VERSION}"
+
+  echo "Python development tools installed in ${venv_dir}"
+}
+
 # Only reports on these directories. It must never create or change them.
 check_project_dirs() {
   log "Checking existing project directories"
@@ -149,6 +172,17 @@ verify_tools() {
   check "Graphviz" dot -V
   check "OpenSpec" openspec --version
   check "Claude Code" claude --version
+
+  # Verify Python testing and quality tools.
+  check "pytest" "${REPO_ROOT}/.venv/bin/python" -m pytest --version
+  check "pytest-cov" "${REPO_ROOT}/.venv/bin/python" -m pip show pytest-cov
+  check "Ruff" "${REPO_ROOT}/.venv/bin/ruff" --version
+
+  # Verify Rust development tools.
+  check "Rust" rustc --version
+  check "Cargo" cargo --version
+  check "Clippy" cargo clippy --version
+  check "rustfmt" rustfmt --version
 }
 
 verify_openspec_pin() {
@@ -218,6 +252,7 @@ main() {
   install_apt_packages
   install_openspec
   install_claude_code
+  install_python_tools
   check_project_dirs
   verify_tools
   verify_openspec_pin
