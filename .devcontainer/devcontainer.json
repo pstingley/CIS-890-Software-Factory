@@ -2,6 +2,11 @@
   "name": "CIS 890 Software Factory",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "latest",
+      "profile": "minimal",
+      "components": "rustfmt,clippy,rust-src,rust-analyzer"
+    },
     "ghcr.io/devcontainers/features/git:1": {
       "version": "os-provided",
       "ppa": false
