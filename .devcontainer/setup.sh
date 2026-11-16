@@ -274,12 +274,22 @@ report_result() {
 }
 
 main() {
-  require_node
-  install_apt_packages
-  install_openspec
-  install_claude_code
-  install_python_tools
-  install_codeflow
+  local mode="${1:-normal}"
+
+  if [[ "${mode}" != "--verify-only" ]]; then
+    require_node
+    install_apt_packages
+    install_openspec
+    install_claude_code
+    install_python_tools
+    install_codeflow
+  fi
+
+  if [[ "${mode}" == "--install-only" ]]; then
+    log "Software Factory prebuild installation complete."
+    return
+  fi
+
   check_project_dirs
   verify_tools
   verify_codeflow
