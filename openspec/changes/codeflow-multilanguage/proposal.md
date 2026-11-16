@@ -6,16 +6,35 @@ CodeFlow 0.2 currently accepts two first-class input types:
 1. **Markdown specifications** (.md) – document intended behavior via flowchart notation (SPEC.md)
 2. **Python source code** (.py) – analyze implementation control flow via Python AST
 
-The Software Factory needs CodeFlow to accept **Rust source code** (.rs) and **PHP source code** (.php) as third and fourth first-class input types while maintaining complete backward compatibility with existing Python and Markdown workflows. This enables developers to:
+The Software Factory needs CodeFlow to accept **Rust source code** (.rs) and **PHP source code** (.php) as third and fourth first-class input types while maintaining complete backward compatibility with existing Python and Markdown workflows. Additionally, CodeFlow must be corrected to generate **accurate control-flow diagrams** that faithfully represent program execution behavior, not AST terminology or syntactic artifacts.
 
-1. Visualize Rust and PHP control flow using the same SVG/HTML rendering conventions as Python flowcharts
-2. Compare implementation behavior across specification, Python, Rust, and PHP implementations
-3. Support structured parsing of Rust's decision-making constructs (match expressions with patterns/guards, if/else, loops, error propagation via ? operator) with proper CFG representation
-4. Support structured parsing of PHP's control flow constructs (functions, classes, methods, namespaces, if/else, switch/match, loops, returns, exceptions, calls) including multi-file projects with include/require and Composer autoloading
-5. Generate optional human-readable documentation (Markdown or Word) for specifications, Python, Rust, and PHP implementations
-6. Maintain complete source traceability: specification requirement IDs, and Python/Rust/PHP file/line references
-7. Support project-level analysis for Python, Rust, and PHP with application entry-point discovery and cross-file relationships
-8. Preserve all existing workflows: SPEC.md flowcharts, existing Word walkthroughs, and Python analysis remain unchanged
+**Critical Issue:** Current CodeFlow flowcharts contain control-flow correctness defects that must be fixed before expanding to new languages:
+- Rust break statements routing to function exit instead of loop exit
+- Rust continue statements not reaching their target loop
+- Rust match arms missing from diagrams
+- Python false-branch construction incorrect
+- Generic node labels (let_declaration, call_expression) obscuring actual operations
+- Graphs incorrectly marked COMPLETE despite partial/incomplete analysis
+
+Fixing these defects requires establishing a **language-independent control-flow correctness contract** (formal specification in `specs/core/control-flow-correctness/spec.md`) that all analyzers (Python, Rust, PHP) must satisfy. This specification ensures:
+- Executable operations are labeled with actual code (not AST types)
+- Decision branches are reachable and correctly connected
+- Loops exit/continue to correct targets
+- Exceptions propagate correctly
+- Returns connect to correct function exit
+- Partial analysis is marked explicitly
+
+This correction is a prerequisite for CodeFlow 0.3. It enables developers to:
+
+1. **Trust control-flow visualizations**: Diagrams accurately represent how code executes, enabling reliable code review and verification
+2. Visualize Rust and PHP control flow using the same corrected SVG/HTML rendering conventions as Python flowcharts
+3. Compare implementation behavior across specification, Python, Rust, and PHP implementations with confidence
+4. Support structured parsing of Rust's decision-making constructs (match expressions with patterns/guards, if/else, loops, error propagation via ? operator) with correct CFG representation
+5. Support structured parsing of PHP's control flow constructs (functions, classes, methods, namespaces, if/else, switch/match, loops, returns, exceptions, calls) including multi-file projects with include/require and Composer autoloading
+6. Generate optional human-readable documentation (Markdown or Word) for specifications, Python, Rust, and PHP implementations
+7. Maintain complete source traceability: specification requirement IDs, and Python/Rust/PHP file/line references
+8. Support project-level analysis for Python, Rust, and PHP with application entry-point discovery and cross-file relationships
+9. Preserve all existing workflows: SPEC.md flowcharts, existing Word walkthroughs, and Python analysis remain unchanged
 
 ## What Changes
 
@@ -25,7 +44,7 @@ The Software Factory needs CodeFlow to accept **Rust source code** (.rs) and **P
     1. **Functional Description**: What the application does, suitable for business analysts and stakeholders
     2. **Technical Description**: How the application works, suitable for software engineers and developers
   - Both prose views are traceable to analyzed source files and explicitly label uncertainties
-  
+
 - **Parser Infrastructure**: Introduce a pluggable analyzer architecture that separates language-specific parsing from graph construction and rendering
 
 - **Rust Analysis**: Implement a structured Rust parser (using tree-sitter with Rust grammar) supporting:
@@ -139,12 +158,12 @@ The Software Factory needs CodeFlow to accept **Rust source code** (.rs) and **P
   - `codeflow/comparison.py` (new, optional): Optional MVP comparison and traceability across all four input types
   - `tests/`: New test suites for Rust parsing, PHP parsing and project discovery, SPEC.md rendering, narrative generation, project-level analysis, and multilanguage workflows
 
-- **APIs**: 
+- **APIs**:
   - New `Analyzer` abstract base class with `analyze(source_path: str) -> AnalysisResult` method
   - Extension of `ReportGenerator` to support analyzer plugin discovery (no breaking changes to existing interface)
   - CLI accepts .rs files and routes based on file extension registry
 
-- **Dependencies**: 
+- **Dependencies**:
   - **tree-sitter** (Python bindings) + **tree-sitter-rust** grammar: Core requirement for Rust parsing (pinned versions documented)
   - **tree-sitter** (Python bindings) + **tree-sitter-php** grammar: Core requirement for PHP parsing (pinned versions documented)
   - **python-docx** (optional): Already available for Word output; condition-checked at import time
@@ -152,7 +171,7 @@ The Software Factory needs CodeFlow to accept **Rust source code** (.rs) and **P
   - Dependency manifest (requirements.txt or pyproject.toml) updated with tree-sitter, tree-sitter-rust, and tree-sitter-php versions
   - Container Dockerfile updated to include tree-sitter dependencies if needed; documented how to verify installation
 
-- **Backward Compatibility**: 
+- **Backward Compatibility**:
   - All existing Python analysis behavior unchanged; Python analyzer refactored into ABC pattern but produces identical CFG
   - All existing SPEC.md workflows unchanged; SVG/HTML rendering unchanged; Mermaid import support preserved
   - All 32 existing Python regression tests continue to pass (primary validation gate)

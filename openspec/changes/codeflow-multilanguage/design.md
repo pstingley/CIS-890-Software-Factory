@@ -18,6 +18,53 @@ Current structure:
 
 **Regression Baseline**: 41 Python and SPEC.md regression tests across 5+ test files; all must pass unchanged (primary validation gate for backward compatibility).
 
+## Foundational Requirement: Language-Independent Control-Flow Correctness Contract
+
+CodeFlow 0.3 establishes a **language-independent control-flow correctness contract** (defined in `specs/core/control-flow-correctness/spec.md`) as the foundation for all analysis. This contract is verified by **shared infrastructure tests**, then applied uniformly to Python, Rust, and PHP analyzers.
+
+**Core Principle:** Control-flow graphs must represent **what the program actually does when executed**, not:
+- AST node types (`let_declaration`, `call_expression`, etc.)
+- Syntactic punctuation (`{`, `}`, `;`)
+- Internal bookkeeping or decorative intermediaries
+
+**Non-Negotiable Requirements:**
+
+1. **Semantic Labeling**: Every node label must describe an executable operation (e.g., `let x = 42` or `if x > 10`), not generic AST terminology.
+
+2. **Correct Decision Branches**: Every `if`, `while`, `match`, `switch` must have reachable branches correctly connected to their targets. Branch conditions must match actual source expressions.
+
+3. **Correct Loop Routing**:
+   - `break` exits to the **immediately enclosing loop's after-loop node**, never to function exit
+   - `continue` jumps to the **immediately enclosing loop's entry/test**, never to function exit or wrong loop
+   - Loop back-edges must connect to correct loop target
+
+4. **Correct Exception Paths**: Exception/error propagation connects to function EXCEPTION_EXIT, not normal return paths.
+
+5. **Correct Return Paths**: All `return` statements connect to function normal EXIT node; multiple returns are shown explicitly.
+
+6. **Valid Graph Structure**:
+   - Entry node has outgoing edges; all reachable nodes have paths to some exit
+   - No invalid cycles except loop-back edges
+   - Graph validation detects and prevents unreachable code representations
+
+7. **Partial Analysis Marking**: If analysis is incomplete (unsupported constructs, dynamic behavior), `is_partial=True` with explicit reason. Never mark incomplete analysis as complete.
+
+8. **Source Traceability**: Every statement/decision node has valid file/line references to actual source code. Full source expressions retained for reference.
+
+**Implementation Order:**
+1. **Phase 1**: Establish shared control-flow graph correctness infrastructure with behavioral verification tests
+2. **Phase 2**: Verify Python analyzer satisfies contract (correctness improvements only)
+3. **Phase 3**: Implement Rust analyzer against contract (new language, full contract compliance required)
+4. **Phase 4**: Cross-language verification using equivalent Python/Rust programs
+5. **Phase 5**: Implement PHP analyzer against validated contract
+
+**Enforcement:**
+- Behavioral tests verify exact paths, edges, and reachability (not just node counts or structural validity)
+- Each analyzer tested against representative programs: nested decisions, loops, early returns, exceptions, mixed control flow
+- Cross-language equivalence tests ensure consistent control-flow semantics across analyzers
+- OpenSpec validation confirms all requirements are satisfied before proceeding to next phase
+- Reference: `specs/testing/behavioral-verification/spec.md` for test strategies
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -73,17 +120,17 @@ class Analyzer(ABC):
     @abstractmethod
     def analyze(self, source_path: str) -> AnalysisResult:
         pass
-    
+
     @property
     @abstractmethod
     def supported_extensions(self) -> List[str]:
         # e.g., [".rs"] for Rust
         pass
-    
+
     @property
     def name(self) -> str:
         pass
-    
+
     @property
     def version(self) -> str:
         pass
@@ -123,7 +170,7 @@ Analyzers register in a module-level registry; CLI and ReportGenerator query the
 
 ### D3: Preserve Existing SVG/HTML Rendering Conventions & Mermaid Support
 
-**Decision:** Extend existing SVG renderer and HTML generator to handle CFGs from any language without modification. Use consistent node colors, shapes, connector styles, and layout algorithms regardless of source language. 
+**Decision:** Extend existing SVG renderer and HTML generator to handle CFGs from any language without modification. Use consistent node colors, shapes, connector styles, and layout algorithms regardless of source language.
 
 Preserve existing CodeFlow support for importing embedded Mermaid flowcharts from SPEC.md files: convert imported Mermaid diagrams to native CodeFlow SVG format, and report unsupported Mermaid syntax. Do not introduce alternate rendering engines or Mermaid as primary output format.
 
@@ -287,7 +334,7 @@ Verify installation during CodeFlow startup. Update Dockerfile to include tree-s
 - **Tree-Sitter Initialization** (current Python API):
   ```python
   from tree_sitter import Language, Parser
-  
+
   # Load Rust grammar
   RUST_LANGUAGE = Language('/path/to/tree-sitter-rust/build/languages.so', 'rust')
   # Or use pre-compiled wheels: tree-sitter.queries.RUST_LANGUAGE

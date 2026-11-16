@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Dict, Set, Optional, Tuple
+from typing import List, Dict, Set, Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from codeflow.validation import ValidationResult
 
 class NodeType(Enum):
     """Types of CFG nodes."""
@@ -34,6 +37,7 @@ class SourceLocation:
     source_code: str = ""
 
 @dataclass
+@dataclass
 class CFGNode:
     """A node in the control-flow graph."""
     id: str
@@ -41,6 +45,7 @@ class CFGNode:
     node_type: NodeType
     source_location: Optional[SourceLocation] = None
     is_exceptional_exit: bool = False
+    is_internal: bool = False  # Internal/structural node, may be hidden in rendering
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON export."""
@@ -55,6 +60,7 @@ class CFGNode:
                 "code": self.source_location.source_code,
             } if self.source_location else None,
             "exceptional_exit": self.is_exceptional_exit,
+            "internal": self.is_internal,
         }
 
 @dataclass
@@ -100,11 +106,11 @@ class CFG:
         """Add an edge by IDs."""
         self.add_edge(CFGEdge(source_id, target_id, label, edge_type))
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary for JSON export."""
+    def to_dict_complete(self) -> dict:
+        """Export complete semantic graph including internal nodes."""
         return {
             "name": self.name,
-            "nodes": [self.nodes[nid].to_dict() for nid in self.nodes],
+            "nodes": [node.to_dict() for node in self.nodes.values()],
             "edges": [e.to_dict() for e in self.edges],
             "entry_node": self.entry_node_id,
             "exit_nodes": self.exit_node_ids,
@@ -117,6 +123,172 @@ class CFG:
             "complete": not self.is_partial,
             "partial_reason": self.partial_reason if self.is_partial else "",
         }
+
+    def _contract_internal_nodes(self) -> Tuple[Dict[str, CFGNode], List[CFGEdge]]:
+        """Contract internal nodes while preserving execution paths and semantics.
+
+        Returns:
+            Tuple of (visible_nodes, simplified_edges) where edges are rewritten
+            to bypass internal nodes while preserving:
+            - Edge type (TRUE, FALSE, EXCEPTION, BREAK, CONTINUE, LOOP_BACK)
+            - Edge labels
+            - All reachability relationships
+        """
+        visible_nodes = {nid: node for nid, node in self.nodes.items() if not node.is_internal}
+        internal_nodes = {nid: node for nid, node in self.nodes.items() if node.is_internal}
+
+        # Use a set to deduplicate bypass edges by (source, target, type, label)
+        edge_set = set()
+        simplified_edges = []
+
+        for edge in self.edges:
+            # If both endpoints are visible, keep the edge as-is
+            if edge.source_id in visible_nodes and edge.target_id in visible_nodes:
+                edge_key = (edge.source_id, edge.target_id, edge.edge_type.value, edge.label)
+                if edge_key not in edge_set:
+                    edge_set.add(edge_key)
+                    simplified_edges.append(edge)
+            # If source is visible but target is internal, find paths through the internal node
+            elif edge.source_id in visible_nodes and edge.target_id in internal_nodes:
+                # Find all paths from this internal node to visible nodes,
+                # preserving the incoming edge's type (the semantics at the decision point)
+                self._find_bypass_paths(edge.target_id, edge, visible_nodes, internal_nodes,
+                                       edge_set, simplified_edges)
+            # If source is internal but target is visible, the incoming edge already handled it
+            elif edge.source_id in internal_nodes and edge.target_id in visible_nodes:
+                # This edge will be created by the bypass when processing the incoming edge
+                pass
+            # If both are internal, skip (will be handled transitively)
+            else:
+                pass
+
+        return visible_nodes, simplified_edges
+
+    def _find_bypass_paths(self, internal_node_id: str, incoming_edge: CFGEdge,
+                           visible_nodes: Dict[str, CFGNode],
+                           internal_nodes: Dict[str, CFGNode],
+                           edge_set: set,
+                           result_edges: List[CFGEdge]) -> None:
+        """Find paths from an internal node to visible nodes and create bypass edges.
+
+        Preserves semantic meaning according to edge type:
+        - EXCEPTION, BREAK, CONTINUE, LOOP_BACK: preserve outgoing edge type (they propagate)
+        - TRUE, FALSE, NORMAL: preserve incoming edge type (decision point semantics)
+
+        Args:
+            internal_node_id: ID of the internal node to bypass
+            incoming_edge: The edge entering the internal node (carries decision semantics)
+            visible_nodes: Map of visible (non-internal) nodes
+            internal_nodes: Map of internal nodes
+            edge_set: Set to track (source, target, type, label) for deduplication
+            result_edges: List to append bypass edges to
+        """
+        visited = set()
+        self._find_bypass_paths_impl(internal_node_id, incoming_edge, visible_nodes,
+                                      internal_nodes, edge_set, result_edges, visited)
+
+    def _find_bypass_paths_impl(self, internal_node_id: str, incoming_edge: CFGEdge,
+                                visible_nodes: Dict[str, CFGNode],
+                                internal_nodes: Dict[str, CFGNode],
+                                edge_set: set,
+                                result_edges: List[CFGEdge],
+                                visited: Set[str]) -> None:
+        """Implementation of bypass path finding with cycle detection."""
+        # Create a key for memoization: (internal_node_id, incoming_edge_type)
+        # Prevents infinite recursion in cycles
+        memo_key = (internal_node_id, incoming_edge.edge_type.value)
+        if memo_key in visited:
+            return
+        visited.add(memo_key)
+
+        # Find outgoing edges from current node
+        outgoing = [e for e in self.edges if e.source_id == internal_node_id]
+
+        for out_edge in outgoing:
+            if out_edge.target_id in visible_nodes:
+                # Determine which edge type to use in the bypass edge:
+                # - EXCEPTION, BREAK, CONTINUE, LOOP_BACK must propagate (preserve outgoing type)
+                # - TRUE, FALSE, NORMAL use incoming type (decision point semantics)
+                if out_edge.edge_type in (EdgeType.EXCEPTION, EdgeType.BREAK,
+                                           EdgeType.CONTINUE, EdgeType.LOOP_BACK):
+                    # Propagating edge types: preserve the outgoing edge type
+                    edge_type_to_use = out_edge.edge_type
+                else:
+                    # Decision/normal edges: preserve the incoming edge type
+                    edge_type_to_use = incoming_edge.edge_type
+
+                # Prefer outgoing label if present, otherwise use incoming
+                label = out_edge.label if out_edge.label else incoming_edge.label
+
+                bypass_edge = CFGEdge(
+                    source_id=incoming_edge.source_id,
+                    target_id=out_edge.target_id,
+                    label=label,
+                    edge_type=edge_type_to_use
+                )
+
+                edge_key = (bypass_edge.source_id, bypass_edge.target_id,
+                           bypass_edge.edge_type.value, bypass_edge.label)
+                if edge_key not in edge_set:
+                    edge_set.add(edge_key)
+                    result_edges.append(bypass_edge)
+
+            elif out_edge.target_id in internal_nodes:
+                # Continue traversing through internal nodes
+                # For propagating edge types, pass them through; otherwise use incoming
+                if out_edge.edge_type in (EdgeType.EXCEPTION, EdgeType.BREAK,
+                                           EdgeType.CONTINUE, EdgeType.LOOP_BACK):
+                    # Create a temporary edge to pass the propagating type through
+                    pass_through_edge = CFGEdge(
+                        source_id=incoming_edge.source_id,
+                        target_id=out_edge.target_id,
+                        label=out_edge.label if out_edge.label else incoming_edge.label,
+                        edge_type=out_edge.edge_type
+                    )
+                    self._find_bypass_paths_impl(out_edge.target_id, pass_through_edge,
+                                                visible_nodes, internal_nodes,
+                                                edge_set, result_edges, visited)
+                else:
+                    # Normal/decision edges continue with original incoming edge semantics
+                    self._find_bypass_paths_impl(out_edge.target_id, incoming_edge,
+                                               visible_nodes, internal_nodes,
+                                               edge_set, result_edges, visited)
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON export with simplified presentation graph.
+
+        Keeps the complete semantic graph internally but exports a simplified version
+        with internal nodes contracted while preserving all execution paths.
+        """
+        visible_nodes, simplified_edges = self._contract_internal_nodes()
+
+        return {
+            "name": self.name,
+            "nodes": [visible_nodes[nid].to_dict() for nid in visible_nodes],
+            "edges": [e.to_dict() for e in simplified_edges],
+            "entry_node": self.entry_node_id,
+            "exit_nodes": self.exit_node_ids,
+            "exception_exit_nodes": self.exception_exit_node_ids,
+            "source": {
+                "file": self.source_location.file,
+                "start_line": self.source_location.start_line,
+                "end_line": self.source_location.end_line,
+            } if self.source_location else None,
+            "complete": not self.is_partial,
+            "partial_reason": self.partial_reason if self.is_partial else "",
+        }
+
+    def mark_validation_failed(self, reason: str) -> None:
+        """Mark graph as partial due to validation failure.
+
+        Args:
+            reason: Description of validation failure.
+        """
+        self.is_partial = True
+        if self.partial_reason:
+            self.partial_reason += "; " + reason
+        else:
+            self.partial_reason = reason
 
 @dataclass
 class AnalysisResult:

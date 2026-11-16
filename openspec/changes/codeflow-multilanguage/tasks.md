@@ -2,710 +2,443 @@
 
 ## Regression Test Baseline
 
-**Verified Test Count**: 41 existing Python and SPEC.md tests across 5+ test files:
-- Python tests (actual count to be verified): ~32 tests
-- SPEC.md tests (actual count to be verified): ~9 tests
-- Total: 41 tests (all must pass unchanged as primary regression gate)
+**Verified Test Count**: 107 passing + 2 skipped (independent verification)
+- Python and SPEC.md tests: 68 passing
+- Rust and integration tests: 39 passing
+- Skipped: 2
+- Total verified: 109 tests (107 passing + 2 skipped)
+
+**Baseline Preservation Requirement:** All 107 currently passing tests must continue to pass throughout Phase 1-5 implementation. This is the primary regression gate.
 
 **Canonical Test Command** (always use this full list, never wildcards):
 ```bash
-python -m pytest tests/test_exit_connections.py tests/test_graph.py tests/test_integration.py tests/test_layout_exit_convention.py tests/test_layout_overlaps.py tests/test_specification.py -v
+python -m pytest tools/codeflow/tests/ -q
 ```
 
 ---
 
-## Implementation Overview
+## Implementation Overview: Shared Correctness Contract First
 
-CodeFlow 0.3 adds **four first-class input types** (SPEC.md, Python, Rust, PHP) with **project-level analysis** for Python, Rust, and PHP.
+CodeFlow 0.3 implements a **language-independent control-flow correctness contract** (Specification R1-R11, Testing T1-T8) across Python, Rust, and PHP.
 
-### Key Phases:
-- **Phase 1** (Weeks 1-2): Infrastructure & Backward Compatibility (41 tests pass)
-- **Phase 2** (Weeks 3-4): Rust Parser & Tests (41 + ~20-25 Rust tests pass)
-- **Phase 3** (Weeks 5-7): PHP Parser, Multi-File Discovery, Project Analysis (41 + 20-25 Rust + 25-30 PHP + 15-20 project tests pass)
-- **Phase 4** (Weeks 8-9): Documentation & Traceability (add ~10-15 doc tests; optional MVP)
-- **Phase 5** (Weeks 10-12): Comparison & Advanced Analysis (add ~5-10 comparison tests; optional MVP)
+**Key Insight:** The shared control-flow graph infrastructure and behavioral verification framework must be established and validated before language-specific analyzer corrections. This prevents shipping incomplete or incorrect analysis in any language.
 
-**Target: 130+ tests total**
+### Implementation Sequence:
+- **Phase 1** (Week 1): Shared Control-Flow Graph Correctness Infrastructure
+- **Phase 2** (Week 2): Python Analyzer Correctness Against Contract
+- **Phase 3** (Weeks 3-4): Rust Analyzer Correctness Against Contract
+- **Phase 4** (Week 5): Cross-Language Verification (Python/Rust equivalence)
+- **Phase 5** (Weeks 6-8): PHP Implementation Against Validated Contract
 
----
-
-## Phase 1: Infrastructure & Backward Compatibility (Weeks 1-2)
-
-### Group 1.1: Analyzer Architecture
-- [ ] 1.1.1 Create `codeflow/analyzers/base.py` with `Analyzer` ABC class
-  - Define `analyze(source_path: str) -> AnalysisResult` abstract method
-  - Define `supported_extensions` property (returns list of extensions like [".py"])
-  - Define `name` and `version` properties
-  - Verify by importing and confirming class is abstract (instantiation fails)
-
-- [ ] 1.1.2 Create `codeflow/analyzers/__init__.py` with analyzer registry
-  - Implement registry dict mapping file extensions → Analyzer instances
-  - Implement `register_analyzer(analyzer: Analyzer)` function
-  - Implement `get_analyzer(extension: str) -> Optional[Analyzer]` function
-  - Verify with unit tests: register and retrieve a mock analyzer
-
-- [ ] 1.1.3 Add `source_references` and `ambiguity_flags` to `AnalysisResult`
-  - Field: `source_references: Dict[str, Tuple[str, int]]` (CFG node ID → (file_path, line_no))
-  - Field: `ambiguity_flags: List[str]` (for flagging uncertain specifications or unsupported constructs)
-  - Field: `analysis_incomplete: bool` (set True if unsupported constructs prevented complete analysis)
-  - Verify by checking AnalysisResult can accept these fields without breaking existing code
-
-### Group 1.2: Python Analyzer Refactoring
-- [ ] 1.2.1 Refactor `codeflow/analyzers/python_analyzer.py` to inherit from `Analyzer` ABC
-  - Wrap existing `analyze_python_file()` logic into `PythonAnalyzer.analyze()` method
-  - Implement `supported_extensions` property returning [".py"]
-  - Keep all existing parsing logic unchanged
-  - Verify by running the full existing test suite: **all 41 tests must pass**
-
-- [ ] 1.2.2 Register `PythonAnalyzer` in the analyzer registry
-  - In `__init__.py`, import PythonAnalyzer and call `register_analyzer(PythonAnalyzer())`
-  - Verify registry lookup works: `get_analyzer(".py")` returns PythonAnalyzer instance
-
-### Group 1.3: Core Refactoring
-- [ ] 1.3.1 Update `codeflow/report_generator.py` to use analyzer registry
-  - Replace hardcoded `analyze_python_file()` call with registry lookup
-  - Call `get_analyzer(file_extension).analyze(source_path)`
-  - Keep all other report generation logic unchanged
-  - Verify: run full baseline test suite, all 41 tests must pass
-
-- [ ] 1.3.2 Update `codeflow/cli.py` to route via analyzer registry
-  - Replace extension-specific handling with generic registry lookup
-  - Extract file extension and call appropriate analyzer
-  - Verify: `python -m codeflow examples/python/tictactoe.py` produces identical output to before
-
-### Group 1.4: Dependency Management
-- [ ] 1.4.1 Research and pin tree-sitter versions
-  - Determine current stable versions of:
-    - `tree-sitter` (Python bindings, minimum version: 0.20.0)
-    - `tree-sitter-rust` (Rust grammar, version matching tree-sitter release)
-    - `tree-sitter-php` (PHP grammar, version matching tree-sitter release)
-  - Document version compatibility and Python version requirements
-  - Create test file to verify Python API initialization matches current documentation
-  - **Verify Tree-sitter PHP API compatibility with existing Rust design**: review PHP grammar bindings, function signatures, return types; confirm consistent interface with Rust bindings
-
-- [ ] 1.4.2 Add tree-sitter dependencies to requirements.txt or pyproject.toml
-  - Pin versions: `tree-sitter==X.Y.Z`, `tree-sitter-rust==A.B.C`, `tree-sitter-php==D.E.F` (use compatible stable versions from research)
-  - Mark python-docx as optional: `python-docx>=0.8.10` (already available)
-  - Verify file is valid TOML/text syntax
-
-- [ ] 1.4.3 Update README.md with dependency section
-  - Document required dependencies (tree-sitter, tree-sitter-rust, tree-sitter-php with specific versions)
-  - Document optional dependencies (python-docx for Word output)
-  - Include installation instructions and troubleshooting for tree-sitter (all three grammars)
-  - Verify README is clear and instructions work
-
-### Group 1.5: Verification Gate
-- [ ] 1.5.1 Run full existing test suite (canonical baseline command)
-  - Confirm all 41 Python and SPEC.md regression tests pass (use canonical command)
-  - Document baseline: 41 tests pass, 0 failures, 0 skipped
-  - **Gate: Do not proceed to Phase 2 if any test fails**
+**Target: 107+ tests passing throughout, 150+ tests at completion**
 
 ---
 
-## Phase 2: Rust Parser & Tests (Weeks 3-4)
+## Phase 1: Shared Control-Flow Graph Correctness Infrastructure (Week 1)
 
-### Group 2.1: Rust Analyzer Foundation with tree-sitter
-- [ ] 2.1.1 Create `codeflow/analyzers/rust_analyzer.py` with `RustAnalyzer` class
-  - Inherit from `Analyzer` ABC
-  - Implement `analyze(source_path: str) -> AnalysisResult` as initial stub
-  - Implement `supported_extensions` property returning [".rs"]
-  - Verify class structure with unit test: can instantiate and call analyze()
+**Objective:** Establish and test the shared infrastructure that all analyzers (Python, Rust, PHP) will use to build correct control-flow graphs. This is **not language-specific** but applies to all analyzers.
 
-- [ ] 2.1.2 Import tree-sitter and initialize Rust parser using current API
-  - `from tree_sitter import Language, Parser`
-  - Load Rust language using current tree-sitter-python API (verify against actual package documentation)
-  - Create parser instance and store for reuse
-  - Test with simple Rust snippet: `fn add(x: i32, y: i32) -> i32 { x + y }`
-  - Verify: parser can parse without errors and return tree structure
+### Group 1.1: Control-Flow Graph Correctness Infrastructure
 
-### Group 2.2: Rust Control Flow Parsing via tree-sitter
-- [ ] 2.2.1 Implement function boundary detection
-  - Use tree-sitter to find `function_item` nodes
-  - Extract function name, parameters, return type from tree
-  - Create CFG entry node (function_name entry) and exit node (function_name exit)
-  - Verify with test: parse `fn add(x: i32, y: i32) -> i32 { x + y }` → CFG has entry and exit
+- [ ] 1.1.1 Review and audit current `codeflow/graph.py` against correctness contract (R1-R8)
+  - Verify CFGNode class supports semantic labels (not AST types)
+  - Verify CFG class tracks entry/exit nodes correctly
+  - Verify edge types include decision/true/false/loop-back/exception labels
+  - Verify source_reference field present (file, line, code)
+  - Verify is_partial flag exists for incomplete analysis marking
+  - Document any gaps or required enhancements
+  - Verify by code review: graph structure matches all 8 universal requirements
 
-- [ ] 2.2.2 Implement if/else statement parsing
-  - Parse `if_expression` nodes with condition and blocks
-  - Create decision node with true/false edges to respective blocks
-  - Handle `else if` chains and optional `else` clause
-  - Verify with test: `if x > 0 { ... } else if x < 0 { ... } else { ... }` → multi-branch CFG
+- [ ] 1.1.2 Implement CFG validation function in `codeflow/graph.py`
+  - Add `validate_graph(cfg: CFG, language: str) -> List[str]` function
+  - Checks:
+    - Entry node exists and has outgoing edges
+    - All nodes reachable from entry have path to exit (normal or exception)
+    - Decision nodes have correct branch labels (true/false, case names, pattern matches)
+    - Loop nodes have back-edges to correct targets
+    - Return nodes connect to normal EXIT
+    - Exception nodes connect to EXCEPTION_EXIT
+    - No syntactic-punctuation nodes (`{`, `}`, `;`)
+    - All statement labels are executable operations, not AST types
+  - Return list of validation errors (empty if valid)
+  - Verify: test with correct and incorrect CFGs
 
-- [ ] 2.2.3 Implement match expression parsing
-  - Parse `match_expression` nodes with arms
-  - Each arm becomes a branch; arm pattern is edge label
-  - Support simple patterns and guards (`pattern if guard =>`)
-  - Create decision node with N edges (one per arm)
-  - Verify with test: 4-arm match with one guard → CFG has 4 edges with correct labels
+- [ ] 1.1.3 Add source-expression tracking to CFGNode
+  - Field: `full_source_expr: str` - complete source code for the statement/decision
+  - Field: `display_label: str` - potentially truncated display label (max ~80 chars)
+  - Field: `source_reference: Tuple[str, int]` - (file_path, line_number_1indexed)
+  - Method: `get_tooltip_text() -> str` - returns full expression for hover/tooltip
+  - Verify by inspection: CFGNode can store and retrieve full expressions
 
-- [ ] 2.2.4 Implement loop parsing (for, while, loop)
-  - Parse `for_expression`, `while_expression`, `loop_statement`
-  - Create loop-entry node and back-edge to loop continuation
-  - Handle `break` as exit edge, `continue` as back-edge
-  - Verify with test: for-loop with break condition → CFG has back edge and exit path
+- [ ] 1.1.4 Implement shared exception-path handling
+  - Define standard exception edge type distinct from normal edges
+  - Implement exception routing in graph builder (all analyzers will use this)
+  - Exception nodes must connect to EXCEPTION_EXIT, never normal EXIT
+  - Function must have EXCEPTION_EXIT node if any exception paths exist
+  - Verify: build simple CFG with exception, validate structure
 
-- [ ] 2.2.5 Implement error propagation (? operator) parsing
-  - Detect `?` suffix on function calls (`result?`)
-  - Create exception-path edge to function exit
-  - Verify with test: chain like `func()?. method()?` → two exception paths to exit
+- [ ] 1.1.5 Implement shared loop-construct helpers
+  - Helper functions for all analyzers to construct loop CFGs correctly:
+    - `create_loop_cfg(condition_node, loop_body_cfgs, break_target, continue_target, language) -> CFG`
+    - `route_break_to_loop_exit(break_node, containing_loop_node) -> Edge`
+    - `route_continue_to_loop_test(continue_node, containing_loop_node) -> Edge`
+  - These ensure consistent loop routing across Python, Rust, PHP
+  - Verify: construct nested loops, verify break/continue routing
 
-- [ ] 2.2.6 Implement function call parsing
-  - Parse `call_expression` nodes (direct calls and method chains)
-  - Create statement/call nodes in CFG
-  - Preserve call sequence
-  - Verify with test: nested/chained calls → CFG preserves sequence
+### Group 1.2: Behavioral Verification Test Framework
 
-### Group 2.3: Rust Unsupported Constructs & Warnings
-- [ ] 2.3.1 Implement unsupported construct detection with **explicit warnings**
-  - Detect macros (`macro_invocation`), async functions, closures, complex generics
-  - Treat as opaque statements; continue parsing
-  - **Log explicit warning messages** to stderr/logger with:
-    - Construct type (e.g., "macro_invocation")
-    - Line number (from tree-sitter node position)
-    - Description: "Unsupported construct detected; analysis may be incomplete for this section"
-  - Store warnings in `ambiguity_flags` list with format: "Line NNN: construct_type (reason)"
-  - Set `analysis_incomplete = True` if any unsupported constructs found
-  - Verify with test: file with `println!`, `async fn`, `|x| x + 1` → analysis completes with explicit warnings
+- [ ] 1.2.1 Implement graph-verification assertion API in `tests/test_helpers.py`
+  - `assert_node_exists(cfg: CFG, label_substring: str) -> CFGNode` - find node by label
+  - `assert_edge_exists(cfg: CFG, from_label: str, to_label: str, edge_type: str) -> Edge` - verify specific edge
+  - `assert_path_exists(cfg: CFG, path: List[str]) -> bool` - verify sequence of nodes reachable
+  - `assert_no_syntactic_nodes(cfg: CFG) -> List[str]` - return list of any `{`, `}`, `;` nodes (should be empty)
+  - `assert_all_nodes_have_sources(cfg: CFG) -> List[str]` - verify all nodes have file/line (return missing)
+  - `assert_graph_valid(cfg: CFG, language: str) -> List[str]` - calls validate_graph, returns errors
+  - `assert_decision_has_branches(cfg: CFG, decision_label: str, expected_branches: List[str])` - verify decision branches
+  - `assert_loop_has_backedge(cfg: CFG, loop_label: str)` - verify loop back-edge exists
+  - Verify: all functions work in standalone tests
 
-- [ ] 2.3.2 Populate source_references field with line numbers
-  - For each CFG node, track source file path and line number from tree-sitter positions
-  - Use tree-sitter node positions (start_point[0] = line number, 0-indexed; convert to 1-indexed)
-  - Store in AnalysisResult.source_references dict: node_id → (filepath, line_no_1indexed)
-  - Verify: generated CFG nodes include (filepath, line_no) tuples
+- [ ] 1.2.2 Create `tests/test_control_flow_correctness.py` with shared infrastructure tests
+  - **R1 Semantic Labeling Tests** (~5 tests)
+    - test_no_ast_node_type_labels (verify no "let_declaration", "call_expression")
+    - test_no_syntactic_punctuation_nodes (verify no `{`, `}` nodes)
+    - test_statement_labels_are_operations (verify labels describe actual code)
+    - test_decision_condition_in_label (verify if/match conditions visible)
+    - test_full_source_expr_accessible (verify full code available via tooltip)
 
-### Group 2.4: Rust Parser Testing (~30 tests)
-- [ ] 2.4.1 Create `tests/test_rust_parsing.py` with ~30 test cases
-  - Test each parser component: functions, if/else, match, loops, error propagation, calls
-  - Test edge cases: nested structures, empty blocks, single-line statements
-  - Test unsupported constructs explicitly:
-    - `test_macro_generates_warning()`: Verify macro causes explicit warning in analysis
-    - `test_async_fn_generates_warning()`: Verify async/await causes explicit warning
-    - `test_analysis_incomplete_flag()`: Verify `analysis_incomplete = True` when unsupported constructs present
-  - Verify: all tests pass with `python -m pytest tests/test_rust_parsing.py -v`
+  - **R2 Decision Branch Correctness Tests** (~6 tests)
+    - test_if_true_false_edges (verify if has true/false branches)
+    - test_if_else_both_paths_shown (verify both branches connected)
+    - test_match_all_arms_present (verify no arms omitted)
+    - test_switch_case_edges (verify each case has edge)
+    - test_nested_decisions_routing (verify nested if inside if, then, else)
+    - test_decision_condition_matches_source (verify condition label matches actual code)
 
-- [ ] 2.4.2 Create `tests/fixtures/rust_examples/` directory with fixture files
-  - simple_function.rs, if_else.rs, match_expression.rs, nested_loops.rs, error_handling.rs, unsupported.rs
-  - Verify files are syntactically valid Rust (parseable by tree-sitter)
+  - **R3 Loop Routing Tests** (~8 tests)
+    - test_loop_has_backedge (verify back-edge to loop entry)
+    - test_break_exits_loop_not_function (verify break → loop exit, not function exit)
+    - test_continue_reaches_loop_test (verify continue → loop condition/top)
+    - test_nested_loops_break_routing (verify inner break exits inner loop, not outer)
+    - test_nested_loops_continue_routing (verify inner continue targets inner loop)
+    - test_for_loop_iteration (verify loop structure preserved)
+    - test_while_loop_condition (verify condition at loop entry)
+    - test_do_while_executes_once (verify body before condition check)
 
-### Group 2.5: Rust Example & Documentation
-- [ ] 2.5.1 Create `examples/rust/tictactoe.rs`
-  - Implement TicTacToe game logic (board state, move validation, win checking)
-  - Mirror structure of Python example where practical (use same game logic)
-  - Verify file is syntactically valid Rust and contains analyzable functions
+  - **R4 Return Path Tests** (~4 tests)
+    - test_return_connects_to_exit (verify return → function EXIT)
+    - test_multiple_returns_shown (verify CFG shows all return points)
+    - test_implicit_return_connected (verify implicit return at end → EXIT)
+    - test_no_return_path_to_exception_exit (verify return never goes to EXCEPTION_EXIT)
 
-- [ ] 2.5.2 Reference single authoritative SPEC.md
-  - Use `examples/python/SPEC.md` as the canonical specification
-  - Document any intentional differences between Python and Rust implementations
-  - Verify SPEC.md describes the game correctly for both implementations
+  - **R5 Exception Path Tests** (~4 tests)
+    - test_exception_edges_to_exception_exit (verify exception → EXCEPTION_EXIT)
+    - test_try_catch_routing (verify try body has exception edge to catch)
+    - test_multiple_catch_branches (verify each catch is separate branch)
+    - test_throw_routes_to_exception_exit (verify throw → EXCEPTION_EXIT)
 
-- [ ] 2.5.3 Test Rust example analysis
-  - Run: `python -m codeflow examples/rust/tictactoe.rs --output-dir /tmp/test_rust_output`
-  - Verify: HTML flowchart is generated without errors
-  - Verify: flowchart shows main game functions (check_win, validate_move, etc.)
+  - **R6 Graph Validation Tests** (~5 tests)
+    - test_all_nodes_reachable (verify no orphaned nodes)
+    - test_all_paths_terminate (verify all paths reach exit)
+    - test_no_invalid_cycles (verify only loop back-edges)
+    - test_entry_has_outgoing_edges (verify entry not empty)
+    - test_exit_has_incoming_edges (verify exit reachable)
 
-### Group 2.6: Verification Gate
-- [ ] 2.6.1 Run full baseline suite + new Rust tests
-  - Run: `python -m pytest tests/test_exit_connections.py tests/test_graph.py tests/test_integration.py tests/test_layout_exit_convention.py tests/test_layout_overlaps.py tests/test_rust_parsing.py -v`
-  - Confirm: all 41 baseline + ~20-25 Rust = 61+ tests pass
-  - **Gate: All tests must pass before proceeding to Phase 3**
+  - **R7 Traceability Tests** (~4 tests)
+    - test_all_nodes_have_source_references (verify file/line present)
+    - test_source_line_matches_code (verify line numbers correct)
+    - test_full_expression_available (verify complete source accessible)
+    - test_source_ref_format_consistent (verify tuple format: (file, line_1indexed))
 
----
+  - **R8 Partial Analysis Marking Tests** (~5 tests)
+    - test_unsupported_construct_sets_partial (verify is_partial=True)
+    - test_incomplete_analysis_not_marked_complete (verify flag blocks COMPLETE)
+    - test_ambiguity_flags_documented (verify reason in ambiguity_flags list)
+    - test_dynamic_behavior_flagged (verify unresolved calls flagged)
+    - test_parsing_errors_flagged (verify syntax errors marked)
 
-## Phase 3: PHP Parser, Project Discovery & Multi-File Analysis (Weeks 5-7)
+- [ ] 1.2.3 Create `tests/fixtures/correctness_examples/` with representative programs
+  - `simple_if.py`, `nested_if.rs` - decision correctness
+  - `for_loop.py`, `while_loop.rs`, `do_while.php` - loop routing
+  - `nested_loops.py` - break/continue in nested context
+  - `multiple_returns.rs` - return path verification
+  - `try_catch.php` - exception routing
+  - `empty_function.rs` - empty blocks without syntax nodes
+  - `mixed_control_flow.py` - complex program with all features
+  - Verify: all fixtures are syntactically valid and analyzable
 
-### Group 3.1: PHP Analyzer Foundation with tree-sitter
-- [ ] 3.1.1 Create `codeflow/analyzers/php_analyzer.py` with `PHPAnalyzer` class
-  - Inherit from `Analyzer` ABC
-  - Implement `analyze(source_path: str) -> AnalysisResult` as initial stub
-  - Implement `supported_extensions` property returning [".php"]
-  - Verify class structure with unit test: can instantiate and call analyze()
+### Group 1.3: Verification Gate
 
-- [ ] 3.1.2 Import tree-sitter and initialize PHP parser
-  - `from tree_sitter import Language, Parser`
-  - Load PHP language using tree-sitter-php grammar
-  - Create parser instance and store for reuse
-  - Test with simple PHP snippet: `<?php function add($x, $y) { return $x + $y; }`
-  - Verify: parser can parse without errors and return tree structure
+- [ ] 1.3.1 Run baseline tests against shared infrastructure
+  - Run: `python -m pytest tests/test_control_flow_correctness.py -v`
+  - Verify: all 32+ infrastructure tests pass
+  - Verify: Python/SPEC.md tests unchanged, all 68 passing
+  - Verify: Rust/integration tests - document current status (expected failures)
+  - **Gate: All 107 baseline tests must still pass. If regression detected, fix before proceeding.**
 
-### Group 3.2: PHP Control Flow Parsing via tree-sitter
-- [ ] 3.2.1 Implement PHP function definition parsing
-  - Use tree-sitter to find function declaration nodes
-  - Extract function name, parameters, return type
-  - Create CFG entry node (function_name entry) and exit node (function_name exit)
-  - Verify with test: parse PHP function → CFG has entry and exit
-
-- [ ] 3.2.2 Implement PHP class and method parsing
-  - Parse class declarations and their methods
-  - Create class-level and method-level CFG nodes
-  - Handle constructor (__construct), static methods, visibility modifiers
-  - Verify with test: parse class with methods → CFG shows class structure and methods
-
-- [ ] 3.2.3 Implement namespace and use statement parsing
-  - Parse namespace declarations and use statements
-  - Track fully qualified names for cross-file resolution
-  - Store namespace context in source_references
-  - Verify with test: namespaced code → source_references include FQCN
-
-- [ ] 3.2.4 Implement if/else statement parsing (PHP)
-  - Parse if/elseif/else blocks as decision nodes
-  - Create proper branching structure
-  - Verify with test: multi-condition if-elseif-else → multi-branch CFG
-
-- [ ] 3.2.5 Implement switch/match expression parsing
-  - Parse switch statements with cases and fallthrough
-  - Parse match expressions (PHP 8+) with arms
-  - Create decision node with edges for each case/arm
-  - Verify with test: switch with break handling, match expression → correct CFG structure
-
-- [ ] 3.2.6 Implement loop construct parsing
-  - Parse for, foreach, while, do-while loops
-  - Create loop-entry and back-edges
-  - Handle break and continue statements
-  - Verify with test: foreach loop with break → CFG has loop structure and exit paths
-
-- [ ] 3.2.7 Implement exception handling (try/catch/finally)
-  - Parse try/catch/finally blocks
-  - Create exception-path edges from try to catch handlers
-  - Handle finally block execution (always runs)
-  - Parse throw statements
-  - Verify with test: try-catch-finally → exception paths and finally edge
-
-- [ ] 3.2.8 Implement function and method call parsing
-  - Identify function calls, method calls, static method calls
-  - Handle chained method calls
-  - Create call statement nodes
-  - Verify with test: direct call, method call, chained calls → all represented
-
-### Group 3.3: PHP Multi-File Discovery and Entry Point Identification
-- [ ] 3.3.1 Create `codeflow/project_discoverer.py` with ProjectDiscoverer class
-  - Implement `discover_project(directory: str, language: str) -> ProjectMetadata`
-  - Discover all source files for specified language
-  - Identify application entry points by convention
-  - Parse project metadata files (composer.json for PHP, Cargo.toml for Rust, setup.py for Python)
-  - Return: list of files, entry points, project structure
-
-- [ ] 3.3.2 Implement PHP-specific project discovery
-  - Discover all .php files in project directory
-  - Respect .gitignore and common exclusions (vendor/, node_modules/, cache/)
-  - Parse composer.json (if present) for autoload configuration
-  - Identify entry points: index.php, public/index.php, web/app.php, CLI scripts (artisan, bin/console)
-  - Discover framework structure if recognized (Laravel, Symfony, WordPress patterns)
-  - Verify with test: scan PHP project → list of files, entry points
-
-- [ ] 3.3.3 Parse Composer autoload configuration
-  - Read composer.json and extract PSR-0/PSR-4 autoload sections
-  - Build namespace-to-file mapping
-  - Return mapping for use in cross-file call resolution
-  - Verify with test: parse composer.json → namespace mappings available
-
-- [ ] 3.3.4 Implement Python project discovery
-  - Discover all .py files in project (respect venv/, __pycache__, etc.)
-  - Parse setup.py or pyproject.toml for entry points
-  - Identify __main__.py and main.py as entry points
-  - Verify with test: scan Python project → files and entry points
-
-- [ ] 3.3.5 Implement Rust project discovery
-  - Discover all .rs files in src/ and other directories
-  - Parse Cargo.toml for project structure and entry points
-  - Identify src/main.rs, src/lib.rs, and binary targets
-  - Verify with test: scan Rust project → files and entry points
-
-### Group 3.4: Cross-File Call Resolution
-- [ ] 3.4.1 Implement static include/require resolution (PHP)
-  - Parse include/require statements with literal file paths
-  - Resolve paths relative to current file and project root
-  - Create cross-file edges in dependency graph
-  - Flag dynamic includes (variable paths) explicitly in ambiguity_flags
-  - Verify with test: include 'config.php' → resolved to file; include $file → flagged as dynamic
-
-- [ ] 3.4.2 Implement namespace-based class resolution (PHP)
-  - Given a namespaced class reference (e.g., App\Services\UserService)
-  - Use Composer autoload mapping to find file
-  - Verify file contains the class
-  - Create cross-file call edge
-  - Flag unresolved classes in ambiguity_flags
-  - Verify with test: new App\Services\UserService() → linked to UserService.php
-
-- [ ] 3.4.3 Implement dynamic call and reflection detection (PHP)
-  - Detect variable function calls: $func(), $obj->$method()
-  - Detect reflection: $reflection->newInstance(), call_user_func()
-  - Detect framework dispatch: app()->make(), container->get()
-  - Flag as unresolved in ambiguity_flags with line number
-  - Set analysis_incomplete = True
-  - Verify with test: dynamic calls flagged as "unresolved_callback", etc.
-
-### Group 3.5: PHP Project-Level Analysis Tests (~25-30 tests)
-- [ ] 3.5.1 Create `tests/test_php_parsing.py` with ~25-30 tests
-  - Functions: simple, with return, with multiple returns, implicit return
-  - Classes: constructor, instance methods, static methods, magic methods
-  - Control flow: if/else chains, switch with fallthrough, match expressions
-  - Loops: for, foreach, while, do-while with break/continue
-  - Exceptions: try/catch/finally, throw, multiple catch blocks
-  - Calls: direct, method, static, chained
-  - Dynamic constructs: variable calls, reflection (verify ambiguity flags)
-  - Verify all tests pass
-
-- [ ] 3.5.2 Create `tests/test_php_project_discovery.py` with ~15-20 tests
-  - Project discovery: scan directory, find all .php files
-  - Entry point detection: index.php, public/index.php, CLI scripts
-  - Composer parsing: extract PSR-4 mappings from composer.json
-  - Cross-file resolution: include/require, class namespaces
-  - Framework detection: Laravel, Symfony patterns (basic)
-  - Unresolved calls: dynamic includes, reflection (verify flagging)
-  - Verify all tests pass
-
-### Group 3.6: Project-Level Analysis Infrastructure
-- [ ] 3.6.1 Create `codeflow/project_analyzer.py` with ProjectAnalyzer class
-  - Coordinate project discovery and multi-file analysis
-  - Analyze each file individually using appropriate analyzer
-  - Build aggregate dependency graph
-  - Track cross-file calls
-  - Generate project-level CFG (high-level view)
-  - Compile warnings and ambiguity flags across all files
-
-- [ ] 3.6.2 Implement project-level overview flowchart
-  - Produce a simplified flowchart showing entry points and module structure
-  - Use different colors/groupings for different modules/files
-  - Show high-level dependencies
-  - Verify: flowchart is readable and represents project structure
-
-- [ ] 3.6.3 Generate project analysis report (JSON)
-  - Structure: metadata, files list, entry points, dependency graph, stats, warnings
-  - Export to JSON for programmatic use
-  - Include cross-file call summary and unresolved references
-  - Verify with test: analyze sample project → JSON report contains expected fields
-
-- [ ] 3.6.4 Update CLI to support project-level analysis
-  - Add `--type=project` flag for project-level analysis
-  - Accept directory path instead of single file
-  - Produce project overview flowchart and per-file reports
-  - Verify: `codeflow analyze ./my_project --type=project --language=php` works
-
-### Group 3.7: Verification Gate
-- [ ] 3.7.1 Full test suite: Python + Rust + PHP + Project
-  - Run: `python -m pytest tests/test_exit_connections.py tests/test_graph.py tests/test_integration.py tests/test_layout_exit_convention.py tests/test_layout_overlaps.py tests/test_rust_parsing.py tests/test_php_parsing.py tests/test_php_project_discovery.py tests/test_project_discovery.py -v`
-  - Confirm: 41 existing + ~20-25 Rust + ~25-30 PHP + ~15-20 project = 101+ tests pass
-  - **Gate: All tests must pass before Phase 4**
+- [ ] 1.3.2 Run OpenSpec validation
+  - Run: `openspec validate codeflow-multilanguage --strict`
+  - Verify: 0 errors, 0 warnings
+  - Verify: control-flow-correctness and behavioral-verification specs present
 
 ---
 
-## Phase 4: Multilanguage Integration & Documentation (Weeks 8-9)
+## Phase 2: Python Analyzer Correctness Against Contract (Week 2)
 
-### Group 4.1: Rendering & Metadata
-- [ ] 4.1.1 Verify SVG/HTML rendering handles all language CFGs identically
-  - Compare Python, Rust, and PHP flowcharts for equivalent logic
-  - Verify layout, colors, shapes, connector styles are identical
-  - No Mermaid or alternate rendering; preserve CodeFlow conventions
+**Objective:** Verify existing Python analyzer satisfies the control-flow correctness contract. Make only necessary correctness improvements to reach 107+ passing tests.
 
-- [ ] 4.1.2 Update `HTMLReportGenerator` to include language metadata
-  - Add source language, file path to report header/metadata
-  - Display: "Source: Python (.py) via PythonAnalyzer", "Source: Rust (.rs) via RustAnalyzer", "Source: PHP (.php) via PHPAnalyzer"
-  - Verify header shows correct language for .py, .rs, .php, .md inputs
+### Group 2.1: Python Analyzer Audit Against Correctness Contract
 
-- [ ] 4.1.3 Update `HTMLReportGenerator` to export source references
-  - Include file paths and line numbers in HTML metadata or sidebar
-  - Display warnings and ambiguity_flags in HTML report (if present)
-  - Optional: add tooltips showing source location on hover
-  - Verify: HTML output includes source reference information and any warnings
+- [ ] 2.1.1 Audit Python analyzer against R1-R8 requirements
+  - Review `codeflow/analyzers/python_analyzer.py` for semantic labeling (R1)
+  - Review decision routing: if, elif, else handling (R2)
+  - Review loop routing: for, while, break, continue (R3)
+  - Review return path handling (R4)
+  - Review exception handling: try/except/finally (R5)
+  - Verify graph validation applied (R6)
+  - Verify source references present (R7)
+  - Verify is_partial flag handling (R8)
+  - Document findings: what works, what needs correction
 
-### Group 4.2: SPEC.md Regression Tests (~10-15 tests)
-- [ ] 4.2.1 Add regression tests for SPEC.md specification rendering
-  - Test: `python -m codeflow examples/python/SPEC.md --no-prose --output-dir /tmp/test_spec`
-  - Verify flowchart is generated and matches previous behavior
-  - Verify rendering is unchanged from before refactoring
-  - Create ~10-15 SPEC.md-specific tests in `tests/test_specification.py`
+- [ ] 2.1.2 Identify Python correctness defects
+  - Use test results from Phase 1.3.1 to identify specific failures
+  - For each failure, determine root cause:
+    - Semantic labeling issue (R1) → document which constructs mislabeled
+    - Branch routing issue (R2) → document which paths incorrect
+    - Loop routing issue (R3) → document which loops/breaks/continues wrong
+    - Return routing issue (R4) → document which returns routed incorrectly
+    - Exception routing issue (R5) → document which exceptions misrouted
+    - Graph validation issue (R6) → document structural errors
+    - Traceability issue (R7) → document missing/wrong references
+    - Partial marking issue (R8) → document incomplete analysis marked complete
+  - Prioritize by impact (how many tests fail)
 
-### Group 4.3: Multilanguage Integration Tests (~15-20 tests)
-- [ ] 4.3.1 Create `tests/test_multilanguage_integration.py` with ~15-20 tests
-  - Test CLI routing: .py → PythonAnalyzer, .rs → RustAnalyzer, .php → PHPAnalyzer, .md → Specification
-  - Test ReportGenerator analyzer dispatch
-  - Test output directory handling and file naming
-  - Test error handling (missing files, invalid syntax)
-  - Verify all tests pass
+- [ ] 2.1.3 Add Python-specific behavioral tests (R9)
+  - Extend `tests/test_control_flow_correctness.py` with Python-specific tests (~10-15 tests)
+  - Test Python-specific constructs: for loops (enumerate, zip), comprehensions, generators, with statements, context managers
+  - Verify each construct produces correct control-flow graph
+  - Verify nested structures (for inside if, try inside while, etc.)
+  - Create fixtures for each test in `tests/fixtures/correctness_examples/`
 
-- [ ] 4.3.2 Test each language workflow end-to-end
-  - Python: `python -m codeflow examples/python/tictactoe.py --output-dir /tmp/test_py`
-  - Rust: `python -m codeflow examples/rust/tictactoe.rs --output-dir /tmp/test_rs`
-  - PHP: `python -m codeflow examples/php/calculator.php --output-dir /tmp/test_php`
-  - Project: `python -m codeflow analyze ./my_project --type=project --language=php --output-dir /tmp/test_project`
-  - Spec: `python -m codeflow examples/python/SPEC.md --no-prose --output-dir /tmp/test_spec`
-  - Verify all produce correct HTML flowcharts without errors
+### Group 2.2: Python Analyzer Correctness Fixes
 
-### Group 4.4: Documentation Generator (Mandatory Capability) (~15 tests)
-- [ ] 4.4.1 Create `codeflow/documentation_generator.py` with unified logic
-  - Support Markdown output for all input types (SPEC.md, Python, Rust, PHP)
-  - Support Word output (python-docx) where available
-  - Reuse existing Claude Code integration from specification.py
-  - **Two distinct code paths** (never silently substitute):
-    - **Full Narrative Path**: If Claude Code available, generate fluent prose; label output as "AI-Generated Narrative"
-    - **Statistics Fallback Path**: If Claude Code unavailable, generate structured summary (node counts, branch counts, etc.); label clearly as "Statistics-Based Summary (Full AI Generation Unavailable)"
-  - Verify: can generate both full and fallback outputs for a simple Python function
+- [ ] 2.2.1 Fix Python semantic labeling (if needed, per audit in 2.1.2)
+  - Ensure all statement labels show actual Python code, not AST types
+  - Ensure decision labels show actual conditions (e.g., `if x > 10:` not `if_statement`)
+  - Ensure loop labels show actual iteration (e.g., `for item in list:` not `for_statement`)
+  - Verify via inspection and behavioral tests in 2.1.3
 
-- [ ] 4.4.2 Add `--prose` flag to CLI
-  - When set, trigger DocumentationGenerator after analysis
-  - Default behavior (no flag): no prose generation
-  - Verify: `python -m codeflow examples/python/tictactoe.py --prose` creates prose output with clear labeling
+- [ ] 2.2.2 Fix Python decision routing (if needed, per audit in 2.1.2)
+  - Verify if/elif/else chains produce correct branch graph
+  - Verify nested if statements produce correct nested branches
+  - Verify boolean operators (and, or) handled correctly
+  - Verify no false branches missing
+  - Test via `tests/test_control_flow_correctness.py` decision tests
 
-- [ ] 4.4.3 Implement Markdown prose generation (all four input types)
-  - Given CFG, extract code snippets from source (for Python/Rust/PHP; quotes for SPEC.md)
-  - Full narrative: Send to Claude Code with source context; generate plain-English prose
-  - Fallback: Generate statistics-based summary (node counts, paths, decisions, loops, error handling)
-  - Format as Markdown (.md file)
-  - Verify: output is readable Markdown and clearly labeled
+- [ ] 2.2.3 Fix Python loop routing (if needed, per audit in 2.1.2)
+  - Verify for/while loops have back-edges to loop entry
+  - Verify break statements exit to loop-exit node, not function exit
+  - Verify continue statements jump to loop-condition, not arbitrary target
+  - Verify nested loops break/continue route to correct enclosing loop
+  - Test via `tests/test_control_flow_correctness.py` loop tests
 
-- [ ] 4.4.4 Implement Word prose generation (all four input types, where python-docx available)
-  - If python-docx available: generate Word document (.docx) using same narrative as Markdown
-  - Use same prose template as Markdown, formatted for Word
-  - Save as `{filename}_Narrative.docx`
-  - If python-docx missing: inform user and skip Word generation with explanation
-  - Verify: Word output is formatted correctly and labeled
+- [ ] 2.2.4 Fix Python exception routing (if needed, per audit in 2.1.2)
+  - Verify try/except blocks route exceptions correctly
+  - Verify finally blocks execute before exit
+  - Verify raise statements route to EXCEPTION_EXIT
+  - Test via `tests/test_control_flow_correctness.py` exception tests
 
-- [ ] 4.4.5 Add PHP documentation generation support
-  - When user runs `python -m codeflow examples/php/calculator.php --prose`, generate Markdown/Word prose
-  - Synthesize PHP-specific patterns (namespaces, classes, exception handling) into readable prose
-  - Verify: output is readable and adds value to code documentation
+- [ ] 2.2.5 Apply source-reference tracking improvements (if needed)
+  - Ensure all CFG nodes have file/line from Python AST
+  - Ensure full source expressions captured for all statements
+  - Verify source references traceability via behavioral tests
+  - Test via R7 traceability tests in `tests/test_control_flow_correctness.py`
 
-- [ ] 4.4.6 Add project-level documentation generation
-  - When user runs `python -m codeflow analyze ./my_project --type=project --language=php --prose`, generate project-level documentation
-  - Synthesize file relationships, entry points, and cross-file calls into readable prose
-  - Verify: output explains project structure and execution flow
+### Group 2.3: Verification Gate
 
-- [ ] 4.4.7 Create `tests/test_documentation_generation.py` with ~15 tests
-  - Test Markdown output for Python, Rust, PHP, SPEC.md (full narrative with Claude Code)
-  - Test Markdown fallback when Claude Code unavailable (statistics-based summary with correct label)
-  - Test Word output (if python-docx available) with correct format
-  - Test Word fallback when python-docx missing (skip Word, inform user, output Markdown)
-  - Test error handling and output labeling (ensure "AI-Generated" vs "Statistics-Based" labels present)
-  - Verify all tests pass
+- [ ] 2.3.1 Run full test suite including Phase 1 and Python-specific tests
+  - Run: `python -m pytest tools/codeflow/tests/ -q`
+  - Confirm: 107+ tests passing (at least 107, potentially with new Python-specific tests)
+  - Confirm: 0 regressions in original baseline tests
+  - **Gate: Must have 107+ passing tests before proceeding to Phase 3**
 
-### Group 4.5: Documentation Updates
-- [ ] 4.5.1 Update README.md with multilanguage support
-  - Document supported Python constructs (existing)
-  - Document supported Rust constructs (if/else, match, loops, error propagation, functions)
-  - Document unsupported Rust constructs (macros, closures with captures, async/await, complex generics)
-  - Document supported PHP constructs (functions, classes, namespaces, control flow, exceptions, multi-file discovery)
-  - Document PHP limitations (dynamic dispatch, reflection, framework routing, mixed PHP/HTML)
-  - **Document explicit warnings** for unsupported constructs and `analysis_incomplete` flag
-  - Document mandatory documentation capability with `--prose` flag
-  - Document project-level analysis capability with `--type=project`
-  - Explain full narrative vs. statistics-based fallback and how to identify which is used
-  - Provide examples for all languages and project analysis
-
-- [ ] 4.5.2 Update CLI help text
-  - Document .py, .rs, .php file support and project analysis
-  - Document --prose flag for documentation generation
-  - Document --type=project for project-level analysis
-  - Show examples for all input types
-  - Verify: `python -m codeflow --help` is clear and accurate
-
-### Group 4.6: Verification Gate
-- [ ] 4.6.1 Full test suite: Python + Rust + PHP + Project + Integration + Documentation
-  - Run: `python -m pytest tests/test_exit_connections.py tests/test_graph.py tests/test_integration.py tests/test_layout_exit_convention.py tests/test_layout_overlaps.py tests/test_rust_parsing.py tests/test_php_parsing.py tests/test_php_project_discovery.py tests/test_project_discovery.py tests/test_specification.py tests/test_multilanguage_integration.py tests/test_documentation_generation.py -v`
-  - Confirm: 41 existing + ~20-25 Rust + ~25-30 PHP + ~15-20 project + 10-15 SPEC + 15-20 integration + 15 documentation = 141+ tests pass
-  - **Gate: All tests must pass before Phase 5**
+- [ ] 2.3.2 Verify Python analyzer satisfies correctness contract
+  - Run Python analyzer on representative Python programs from fixtures
+  - Visually inspect generated SVG flowcharts: semantic labels, correct branches, loop routing
+  - Verify no `{`, `}` nodes
+  - Verify source references correct
+  - Verify is_partial flag correct
+  - Run `openspec validate codeflow-multilanguage --strict`
+  - Verify: 0 errors, 0 warnings
 
 ---
 
-## Phase 5: Source Traceability & Comparison (Weeks 10-12) [Optional MVP]
+## Phase 3: Rust Analyzer Correctness Against Contract (Weeks 3-4)
 
-### Group 5.1: Comparison Infrastructure
-- [ ] 5.1.1 Create `codeflow/comparison.py` module with evidence-based alignment categories
-  - Implement `ComparisonReport` class tracking node alignment
-  - Implement node matching heuristics (label similarity, structure matching)
-  - **Define alignment categories explicitly**:
-    - "Matched": Strong structural correspondence
-    - "Partially Matched": Moderate structural correspondence
-    - "Unmatched": No clear structural correspondence
-    - "Requires Review": Parsing ambiguity or unsupported constructs
-  - Include alignment category on every compared node (never omit)
-  - Include explicit disclaimer: "Structural matching does NOT prove behavioral equivalence"
-  - Calculate coverage metrics with caveats: "X% of spec nodes have aligned implementations (manual review essential to confirm semantic equivalence)"
-  - Verify: can compare two simple CFGs and identify aligned nodes with appropriate categories
+**Objective:** Implement Rust analyzer satisfying the full correctness contract (R1-R8, R10). Use Tic-Tac-Toe acceptance test.
 
-- [ ] 5.1.2 Implement comparison HTML report generation
-  - Generate HTML with side-by-side or tabbed flowcharts
-  - Highlight aligned nodes with categories ("Matched", "Partially Matched", "Unmatched", "Requires Review")
-  - Show divergence summary (spec-only paths, impl-only paths) with caveats
-  - Include explicit disclaimer: "Comparison is a review aid for identifying implementation gaps. Manual verification required for functional correctness. Structural matching does not prove behavioral equivalence."
-  - Include source traceability (file/line numbers)
-  - Verify: HTML report is viewable and clearly labels limitations and methodology
+### Group 3.1: Rust Analyzer Architecture Review
 
-### Group 5.2: CLI Comparison Command
-- [ ] 5.2.1 Add `compare` subcommand to CLI
-  - Syntax: `codeflow compare <file1> <file2> [<file3>]`
-  - Parse arguments, analyze each file via registry
-  - Call comparison logic
-  - Generate merged report
-  - Verify: CLI accepts 2-3 files and routes to comparison
+- [ ] 3.1.1 Review existing `codeflow/analyzers/rust_analyzer.py` against R1-R8, R10
+  - Semantic labeling (R1): verify all labels are actual Rust code
+  - Decision routing (R2, R10): verify if/match branches all present and routed correctly
+  - Loop routing (R3, R10): verify for/while/loop back-edges, break/continue routing
+  - Return routing (R4): verify returns to EXIT
+  - Exception routing (R5, R10): verify ? operator and Result-based errors routed correctly
+  - Graph validation (R6): run validation checks
+  - Traceability (R7): verify source references present
+  - Partial marking (R8): verify incomplete analysis marked
+  - Rust-specific (R10): async/await, closures, macros detection
+  - Document current state: what satisfies contract, what needs fixes
 
-### Group 5.3: Comparison Testing (~10-15 tests)
-- [ ] 5.3.1 Create `tests/test_comparison.py` with ~10-15 tests
-  - Test spec vs Python (should have strong structural correspondence; expect "Matched" or "Partially Matched")
-  - Test Python vs Rust (same behavior, possibly different structure; expect "Partially Matched")
-  - Test Python vs PHP (same behavior, possibly different structure; expect "Partially Matched")
-  - Test three-way and four-way comparisons with category assignments
-  - Test divergence detection and category accuracy
-  - Test that alignment categories are present and appropriate
-  - Test "Requires Review" category when unsupported constructs present
-  - Verify all tests pass
+- [ ] 3.1.2 Identify Rust analyzer correctness defects (referencing initial problem report)
+  - R3 Loop Routing: break routing to function EXIT instead of loop exit (TEST T4)
+  - R3 Loop Routing: continue routing to wrong nodes (TEST T4)
+  - R2, R10 Match Arms: match expression arms missing/incomplete (TEST T3)
+  - R1 Semantic Labeling: generic node type labels instead of actual code (TEST T2)
+  - R6, R8 Partial Marking: graphs with unsupported constructs marked COMPLETE (TEST T6)
+  - Prioritize fixes by severity: break/continue routing must be correct before shipping
 
-- [ ] 5.3.2 Test end-to-end comparison workflow
-  - Run: `python -m codeflow compare examples/python/SPEC.md examples/python/tictactoe.py examples/rust/tictactoe.rs examples/php/tictactoe.php --output-dir /tmp/compare`
-  - Verify comparison report is generated
-  - Verify all four flowcharts are shown
-  - Verify alignment and divergence are highlighted with categories ("Matched", "Partially Matched", etc.)
-  - Verify output includes explicit disclaimer: "Comparison is a review aid. Manual verification required for functional correctness. Structural matching does not prove behavioral equivalence."
+### Group 3.2: Rust-Specific Behavioral Tests
 
-### Group 5.4: Limitations & Documentation
-- [ ] 5.4.1 Update README.md with comparison mode limitations
-  - Clearly state: **"Comparison is a review aid for identifying implementation gaps. Manual verification required for functional correctness. Structural matching does NOT prove behavioral equivalence."**
-  - Document alignment categories and what they mean
-  - Document that heuristic matching can produce false positives (structurally similar but semantically different) and false negatives (semantically equivalent but structurally different)
-  - Explain which constructs create blind spots (unsupported Rust features, macros, async/await, closures, etc.)
-  - Explain that different implementations may have equivalent behavior despite divergent structure
-  - Provide examples of typical usage and how to interpret results
-  - Warn users that manual code review and testing are essential for correctness
-  - Warn users that manual verification is essential
-  - Verify documentation is clear and complete
+- [ ] 3.2.1 Create `tests/test_rust_correctness.py` with Rust-specific tests (~25-30 tests)
+  - Extend Phase 1 shared tests with Rust-specific constructs (~15-20 Rust-specific tests)
+  - R10 Async/Await: test detection, unsupported marking (async fn, .await)
+  - R10 Closures: test detection, unsupported marking (|x| ..., move |x| ...)
+  - R10 Macros: test detection, unsupported marking (println!, vec!, etc.)
+  - R10 Complex Generics: test detection, unsupported marking (Trait<T: Bound>)
+  - R10 Error Handling: test ? operator routing (TEST T5)
+  - Create fixtures for all Rust-specific tests in `tests/fixtures/correctness_examples/rust/`
 
-### Group 4.5: Verification Gate
-- [ ] 4.5.1 Full test suite with comparison tests
-  - Run full canonical baseline plus all new tests
-  - Confirm: 103+ previous + 10 comparison = 112+ tests pass
-  - **Gate: All tests must pass**
+### Group 3.3: Rust Analyzer Corrections
 
----
+- [ ] 3.3.1 Fix R3 Loop Routing (break/continue)
+  - Fix: break statements must route to immediately enclosing loop exit, never function exit
+  - Fix: continue statements must route to immediately enclosing loop test/entry, never function exit or wrong loop
+  - Implementation: use loop-construct helpers from Phase 1.1.5
+  - Test: run loop routing tests from Phase 1.2.2 R3 tests
+  - Test: run Rust-specific loop tests from 3.2.1
 
-## Final Integration & Delivery
+- [ ] 3.3.2 Fix R2, R10 Match Arm Routing
+  - Fix: all match expression arms must be present in CFG
+  - Fix: each arm must have edge from match decision node
+  - Fix: arm pattern must be visible (R1 semantic labeling)
+  - Implementation: verify tree-sitter match_expression parsing includes all arms
+  - Test: run decision branch tests from Phase 1.2.2 R2
+  - Test: run Rust match-specific tests from 3.2.1
 
-### Group 5.1: Final Testing & Verification
-- [ ] 5.1.1 Full end-to-end workflow validation (all input types, all flags)
-  - Python analysis: `python -m codeflow examples/python/tictactoe.py --output-dir /tmp/py_output` → flowchart OK
-  - Rust analysis: `python -m codeflow examples/rust/tictactoe.rs --output-dir /tmp/rs_output` → flowchart OK
-  - SPEC.md analysis: `python -m codeflow examples/python/SPEC.md --output-dir /tmp/spec_output` → flowchart OK
-  - Python with documentation: `python -m codeflow examples/python/tictactoe.py --prose --output-dir /tmp/py_prose` → Markdown + Word generated with labels
-  - Rust with documentation: `python -m codeflow examples/rust/tictactoe.rs --prose --output-dir /tmp/rs_prose` → Markdown + Word generated with labels
-  - Comparison (if Phase 4 done): `python -m codeflow compare examples/python/SPEC.md examples/python/tictactoe.py examples/rust/tictactoe.rs --output-dir /tmp/compare` → report OK with confidence levels
-  - Test with unsupported Rust constructs: Verify explicit warnings and incomplete-analysis flag
-  - Verify all workflows complete without errors and produce expected outputs
+- [ ] 3.3.3 Fix R1 Semantic Labeling (Generic Node Types)
+  - Fix: replace generic labels like "let_declaration", "call_expression" with actual code
+  - Method: extract source text from tree-sitter node position in source file
+  - Implementation: use full_source_expr field added in Phase 1.1.3
+  - Test: run R1 semantic labeling tests from Phase 1.2.2
+  - Test: verify no "let_declaration", "call_expression", etc. in generated labels
 
-- [ ] 5.1.2 Regression validation (canonical baseline)
-  - Run: `python -m pytest tests/test_exit_connections.py tests/test_graph.py tests/test_integration.py tests/test_layout_exit_convention.py tests/test_layout_overlaps.py -v`
-  - Confirm all 33 original Python tests pass unchanged
-  - Confirm all new tests pass (Rust, integration, documentation, comparison as applicable)
-  - Final count: 112+ tests pass, 0 failures
+- [ ] 3.3.4 Fix R6, R8 Partial Marking (Incomplete Analysis)
+  - Fix: graphs with unsupported constructs (R10 categories) must have is_partial=True
+  - Fix: reason must be in ambiguity_flags list
+  - Fix: graph must NOT be marked COMPLETE if any unsupported constructs found
+  - Implementation: set is_partial=True when any R10 unsupported construct encountered
+  - Test: run R8 partial marking tests from Phase 1.2.2
+  - Test: verify graphs with async/await, macros, etc. marked partial
 
-### Group 5.2: Documentation & Architecture
-- [ ] 5.2.1 Update QUICK_START.md or README.md with quickstart examples
-  - Add Python quickstart: `python -m codeflow examples/python/tictactoe.py --open`
-  - Add Rust quickstart: `python -m codeflow examples/rust/tictactoe.rs --open`
-  - Add documentation quickstart: `python -m codeflow examples/python/tictactoe.py --prose`
-  - Verify examples are clear and working
+- [ ] 3.3.5 Apply source-reference improvements
+  - Ensure all CFG nodes have file/line from tree-sitter positions
+  - Ensure full source expressions captured for all statements
+  - Use source-expression tracking from Phase 1.1.3
+  - Test: run R7 traceability tests from Phase 1.2.2
 
-- [ ] 5.2.2 Create or update `tools/codeflow/ARCHITECTURE.md`
-  - Document analyzer plugin system and Analyzer ABC interface
-  - Explain how to add new languages (implement Analyzer, register extension)
-  - Show code examples for creating an Analyzer subclass
-  - Document AnalysisResult structure with source_references and ambiguity_flags
-  - Document tree-sitter integration and graceful degradation for unsupported constructs
-  - Verify documentation is clear and maintainable
+### Group 3.4: Rust Analyzer Testing with Tic-Tac-Toe
 
-### Group 5.3: Container & Dependencies
-- [ ] 5.3.1 Verify tree-sitter installation and dependencies
-  - Document exact versions of tree-sitter and tree-sitter-rust used
-  - If Dockerfile needs updates, document changes (system dependencies for tree-sitter)
-  - Verify tree-sitter is available when CodeFlow runs in container
-  - Verify python-docx is optional (installed only if docs extra requested)
-  - Test installation in Software Factory container environment
+- [ ] 3.4.1 Verify Rust Tic-Tac-Toe acceptance test
+  - Location: `tools/codeflow/examples/rust/tictactoe/`
+  - Run: `python -m codeflow project tools/codeflow/examples/rust/tictactoe/`
+  - Verify: generates HTML index report with links to individual function SVGs
+  - Verify: main.rs functions analyzed correctly
+  - Verify: lib.rs functions analyzed correctly
+  - Verify: cross-file relationships identified (main calls lib functions)
+  - Verify: no syntactic nodes (`{`, `}`)
+  - Verify: semantic labels show actual Rust code
+  - Verify: break/continue routing correct in game loop
+  - Verify: match expressions (if present) have all arms
+  - Visually inspect representative functions: game loop, move validation, win detection
+  - Verify: control-flow matches actual Rust execution semantics
 
-### Group 5.4: Final Sign-Off
-- [ ] 5.4.1 Code review checklist
-  - All new code follows CodeFlow style and conventions
-  - All tests pass (canonical baseline + all new tests)
-  - All documentation updated and accurate
-  - No breaking changes to existing Python workflow
-  - Backward compatibility confirmed (all 41 original tests pass)
-  - Warnings for unsupported constructs are explicit and informative
-  - Fallback documentation is clearly labeled
-  - Confidence levels are present on all comparison matches
+- [ ] 3.4.2 Document Rust analyzer limitations
+  - Explicitly mark what constructs are unsupported: async/await, macros, complex generics, closures
+  - Verify is_partial=True for TicTacToe if any unsupported constructs present
+  - Or verify is_partial=False and ambiguity_flags=[] if fully supported
 
-- [ ] 5.4.2 Acceptance testing
-  - Stakeholders review flowcharts for Python, Rust, PHP, and SPEC.md (verify quality)
-  - Stakeholders review project-level analysis and cross-file dependencies
-  - Stakeholders review documentation generation (full narrative vs. fallback)
-  - Stakeholders review comparison mode with confidence levels
-  - Stakeholders confirm delivered features meet requirements
+### Group 3.5: Verification Gate
+
+- [ ] 3.5.1 Run full test suite (Phases 1, 2, 3)
+  - Run: `python -m pytest tools/codeflow/tests/ -q`
+  - Confirm: 107+ tests passing
+  - Confirm: 0 regressions in baseline tests
+  - Confirm: Rust-specific tests passing
+  - Confirm: 2 skipped (unchanged from baseline)
+  - **Gate: Must have 107+ passing tests with Rust fixes before proceeding**
+
+- [ ] 3.5.2 Verify Rust analyzer satisfies correctness contract
+  - Run Rust analyzer on representative Rust programs from fixtures
+  - Visually inspect generated SVG flowcharts: semantic labels, correct branches, loop routing, match arms
+  - Verify no `{`, `}` nodes
+  - Verify source references correct
+  - Verify is_partial flag correct
+  - Run `openspec validate codeflow-multilanguage --strict`
+  - Verify: 0 errors, 0 warnings
 
 ---
 
-## Testing Summary
+## Phase 4: Cross-Language Verification (Week 5)
 
-| Test Category | Count | Required | Notes |
-|---|---|---|---|
-| Python + SPEC.md Regression (existing, 41 tests) | 41 | ✅ MUST PASS | Regression gate; unchanged baseline |
-| Rust Parsing (new) | 20-25 | ✅ Core | tree-sitter integration, warnings, unsupported constructs |
-| PHP Parsing (new) | 25-30 | ✅ Core | tree-sitter PHP integration, dynamic behavior flagging |
-| Project Discovery & Analysis (new) | 15-20 | ✅ Core | Multi-file PHP/Python/Rust, entry-point identification, cross-file calls |
-| Multilanguage Integration (new) | 15-20 | ✅ Core | CLI routing, analyzer dispatch, project analysis |
-| Documentation Generation (new) | 15 | ✅ Mandatory | Full vs. fallback labeling, all input types, project-level docs |
-| Comparison & Alignment (new, optional) | 10-15 | ✨ Optional | Alignment categories, review aid semantics |
-| **Total** | **141-165** | | **All must pass before release** |
+**Objective:** Verify consistent control-flow semantics across Python and Rust using equivalent programs.
 
-**Gate Criteria:**
-- **Phase 1**: All 41 Python + SPEC.md tests pass (no regression)
-- **Phase 2**: All 41 + 20-25 Rust tests pass
-- **Phase 3**: All 41 + 20-25 Rust + 25-30 PHP + 15-20 project = 101+ tests pass
-- **Phase 4**: All 101+ + 15-20 integration + 15 documentation = 131+ tests pass (documentation mandatory)
-- **Phase 5** (optional): Add 10-15 comparison tests; all pass
-- **Final**: 141-165 tests pass, 0 failures before declaring implementation complete
+### Group 4.1: Equivalent Program Pairs
+
+- [ ] 4.1.1 Create equivalent Python/Rust program pairs
+  - `fibonacci.py` / `fibonacci.rs` - simple recursion and loops
+  - `search_array.py` / `search_array.rs` - decision trees and early return
+  - `validate_input.py` / `validate_input.rs` - nested conditionals and error handling
+  - `game_turn.py` / `game_turn.rs` - complex control flow (from TicTacToe)
+  - Verify: programs have identical execution logic, different syntax
+
+### Group 4.2: Cross-Language CFG Comparison
+
+- [ ] 4.2.1 Create `tests/test_cross_language_verification.py`
+  - For each equivalent pair, generate Python and Rust CFGs
+  - Compare structure: same decision points, same loop structure, same return/exception routing
+  - Create assertion helpers to compare graphs structure-wise (allowing for language-specific details)
+  - Test: Python fibonacci CFG matches Rust fibonacci CFG in structure
+  - Test: Python search CFG matches Rust search CFG
+  - Etc. for all equivalent pairs
+  - Verify: 5-10 cross-language verification tests pass
+
+### Group 4.3: Verification Gate
+
+- [ ] 4.3.1 Run cross-language verification suite
+  - Run: `python -m pytest tests/test_cross_language_verification.py -v`
+  - Confirm: all cross-language tests pass
+  - Confirm: 107+ baseline tests still passing
+  - **Gate: Cross-language consistency verified before PHP implementation**
 
 ---
 
-## Key Implementation Notes
+## Phase 5: PHP Implementation Against Validated Contract (Weeks 6-8)
 
-### Test Commands
-- **Always use canonical baseline**: `python -m pytest tests/test_exit_connections.py tests/test_graph.py tests/test_integration.py tests/test_layout_exit_convention.py tests/test_layout_overlaps.py -v`
-- Never use wildcards like `tests/test_*.py` or `tests/test_python_*`
-- Explicit file lists ensure complete coverage
+**Objective:** Implement PHP analyzer satisfying full correctness contract (R1-R8, R11) using validated infrastructure from Phases 1-4.
 
-### Unsupported Constructs & Dynamic Behavior
-- **Rust**: Generate explicit warnings to stderr with line numbers for macros, closures, async/await, complex generics
-- **PHP**: Flag dynamic includes, reflection, variable calls, framework dispatch in ambiguity_flags
-- Set `analysis_incomplete = True` when unsupported constructs detected
-- Add entries to `ambiguity_flags` list with line number, construct type, and explanation
-- Treated as opaque statements; parsing continues
-- Warnings appear in HTML report and JSON project report
+**Requirement:** PHP implementation deferred until Phases 1-4 complete and all infrastructure validated. This prevents shipping incomplete analysis and ensures PHP follows same correctness standards as Python and Rust.
 
-### Documentation Generation
-- **Full Narrative**: Claude Code available → fluent prose → label "AI-Generated Narrative"
-- **Statistics Fallback**: Claude Code unavailable → structured summary → label "Statistics-Based Summary (Full AI Generation Unavailable)"
-- Never silently substitute; always explicitly label
-- Check python-docx availability; skip Word if missing with explanation
+---
 
-### Project Discovery & Analysis
-- Language-specific discovery: Python (.py), Rust (.rs), PHP (.php)
-- Entry-point identification by convention: main.py/__main__.py (Python), main.rs/lib.rs (Rust), index.php/CLI scripts (PHP)
-- Cross-file dependency resolution: imports (Python), modules/crates (Rust), includes/namespaces (PHP)
-- Dynamic/unresolved relationships flagged in ambiguity_flags with line number
-- Project-level flowchart simplified view of entry points and module structure
-- JSON and HTML project reports with file listings, entry points, dependency graph, warnings
+## Summary: Why This Order Matters
 
+1. **Phase 1 (Shared Infrastructure)**: Establishes the correctness contract and behavioral tests that ALL analyzers must satisfy. Without this, language-specific fixes lack a unified standard.
 
-### Tree-Sitter Integration
-- Pin exact versions of tree-sitter and tree-sitter-rust
-- Use current stable Python API (verify against package documentation)
-- Use tree-sitter node positions (0-indexed lines) and convert to 1-indexed for reporting
+2. **Phase 2 (Python Correctness)**: Verifies existing Python analyzer meets contract. If Python can't satisfy the contract, Rust and PHP implementations will fail too.
 
-### Comparison Alignment Categories (Evidence-Based)
-- "Matched": Strong structural correspondence; requires manual review to confirm semantic equivalence
-- "Partially Matched": Moderate structural correspondence; requires manual review to determine semantic relationship
-- "Unmatched": No clear structural correspondence; requires manual review to explain difference
-- "Requires Review": Parsing ambiguity or unsupported constructs; cannot determine alignment without code inspection
-- Never claim structural matching proves behavioral equivalence
-- Include disclaimer in reports: "Comparison is a review aid for identifying implementation gaps. Manual verification required for functional correctness."
-- Never omit alignment category from compared nodes
+3. **Phase 3 (Rust Correctness)**: Implements new language using validated contract and infrastructure. Rust-specific fixes (break/continue routing, match arms, semantic labeling) are tested against Phase 1 behavioral framework.
 
-### Mermaid Import Preservation
-- Existing SPEC.md Mermaid import capability continues unchanged
-- No changes to SpecificationAnalyzer's existing Mermaid handling
-- New multilanguage renderers preserve imported Mermaid → native CodeFlow SVG behavior
+4. **Phase 4 (Cross-Language Verification)**: Ensures consistent semantics across languages. This is the validation gate for correctness.
+
+5. **Phase 5 (PHP Implementation)**: Can proceed with confidence knowing Python/Rust are correct, infrastructure is robust, and cross-language verification has passed. PHP follows same contract, benefits from shared infrastructure.

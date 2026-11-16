@@ -3,6 +3,7 @@
 import pytest
 from codeflow.analyzers import get_analyzer, register_analyzer, Analyzer
 from codeflow.analyzers.python_analyzer import PythonAnalyzer
+from codeflow.analyzers.rust_analyzer import RustAnalyzer
 
 class TestAnalyzerRegistry:
     """Test cases for analyzer registry functionality."""
@@ -21,24 +22,38 @@ class TestAnalyzerRegistry:
         assert isinstance(analyzer, PythonAnalyzer)
         assert analyzer.name == "PythonAnalyzer"
 
+    def test_rust_analyzer_registered_for_rs(self):
+        """Test that RustAnalyzer is registered for .rs extension."""
+        analyzer = get_analyzer(".rs")
+        assert analyzer is not None
+        assert isinstance(analyzer, RustAnalyzer)
+        assert analyzer.name == "RustAnalyzer"
+
     def test_unsupported_extension_returns_none(self):
         """Test that get_analyzer returns None for unsupported extensions."""
-        analyzer = get_analyzer(".rs")
-        assert analyzer is None
-
         analyzer = get_analyzer(".md")
         assert analyzer is None
 
         analyzer = get_analyzer(".go")
         assert analyzer is None
 
+        analyzer = get_analyzer(".js")
+        assert analyzer is None
+
     def test_python_analyzer_properties(self):
         """Test that PythonAnalyzer has required properties."""
         analyzer = get_analyzer(".py")
         assert analyzer.name == "PythonAnalyzer"
-        assert analyzer.version == "0.2.0"
+        assert analyzer.version == "0.3.0"
         assert ".py" in analyzer.supported_extensions
         assert ".pyw" in analyzer.supported_extensions
+
+    def test_rust_analyzer_properties(self):
+        """Test that RustAnalyzer has required properties."""
+        analyzer = get_analyzer(".rs")
+        assert analyzer.name == "RustAnalyzer"
+        assert analyzer.version == "0.3.0"
+        assert ".rs" in analyzer.supported_extensions
 
     def test_python_analyzer_analyze_method(self):
         """Test that PythonAnalyzer.analyze returns AnalysisResult."""
@@ -85,6 +100,17 @@ class TestAnalyzerInterface:
         assert hasattr(analyzer, 'name')
         assert hasattr(analyzer, 'version')
 
+    def test_rust_analyzer_implements_analyzer(self):
+        """Test that RustAnalyzer implements Analyzer interface."""
+        analyzer = get_analyzer(".rs")
+        assert isinstance(analyzer, Analyzer)
+
+        # Verify all required methods/properties exist
+        assert callable(analyzer.analyze)
+        assert hasattr(analyzer, 'supported_extensions')
+        assert hasattr(analyzer, 'name')
+        assert hasattr(analyzer, 'version')
+
 class TestCLIRouting:
     """Test cases for CLI file routing through analyzer registry."""
 
@@ -95,7 +121,7 @@ class TestCLIRouting:
         test_cases = [
             ("example.py", True),      # Should find analyzer
             ("example.pyw", True),     # Should find analyzer
-            ("example.rs", False),     # No analyzer yet
+            ("example.rs", True),      # Rust analyzer now available
             ("example.md", False),     # No analyzer yet
             ("example.js", False),     # No analyzer
         ]

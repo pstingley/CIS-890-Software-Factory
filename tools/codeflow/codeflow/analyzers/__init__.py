@@ -3,6 +3,7 @@
 from typing import Dict, Optional
 from codeflow.analyzers.base import Analyzer
 from codeflow.analyzers.python_analyzer import PythonAnalyzer
+from codeflow.analyzers.rust_analyzer import RustAnalyzer
 
 # Global registry mapping file extensions to analyzer instances
 _analyzer_registry: Dict[str, Analyzer] = {}
@@ -31,4 +32,10 @@ def get_analyzer(extension: str) -> Optional[Analyzer]:
 _python_analyzer = PythonAnalyzer()
 register_analyzer(_python_analyzer)
 
-__all__ = ["Analyzer", "register_analyzer", "get_analyzer", "PythonAnalyzer"]
+try:
+    _rust_analyzer = RustAnalyzer()
+    register_analyzer(_rust_analyzer)
+except Exception as e:
+    print(f"Warning: Failed to initialize Rust analyzer: {e}")
+
+__all__ = ["Analyzer", "register_analyzer", "get_analyzer", "PythonAnalyzer", "RustAnalyzer"]

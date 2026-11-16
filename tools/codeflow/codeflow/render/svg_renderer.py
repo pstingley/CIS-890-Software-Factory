@@ -1,23 +1,54 @@
 """SVG renderer - converts CFG to SVG diagram."""
 
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List
 from codeflow.graph import CFG, CFGNode, CFGEdge, NodeType
 from codeflow.layout.simple_layout import SimpleHierarchicalLayout, Position, NodeDimensions
 import html as html_module
 
 class SVGRenderer:
-    """Renders a CFG as SVG."""
+    """Renders a CFG as SVG.
+
+    Uses the contracted presentation graph (visible nodes and bypass edges) to ensure
+    consistency with JSON export and correct control-flow semantics.
+    """
 
     def __init__(self, cfg: CFG):
         self.cfg = cfg
-        self.layout = SimpleHierarchicalLayout(cfg)
+        # Get contracted presentation graph
+        visible_nodes, contracted_edges = cfg._contract_internal_nodes()
+        self.visible_nodes = visible_nodes
+        self.contracted_edges = contracted_edges
+
+        # Create a temporary CFG with only visible nodes and contracted edges for layout
+        self.presentation_cfg = self._create_presentation_cfg()
+
+        self.layout = SimpleHierarchicalLayout(self.presentation_cfg)
         self.positions = self.layout.layout()
         # Get dimensions from layout (pre-calculated with text wrapping)
         self.node_dimensions = self.layout.dimensions
+        self.wrapped_labels = self.layout.wrapped_labels  # Use wrapped labels from layout
         self.padding = 40
 
+    def _create_presentation_cfg(self) -> CFG:
+        """Create a presentation CFG with only visible nodes and contracted edges."""
+        presentation_cfg = CFG(self.cfg.name)
+        presentation_cfg.entry_node_id = self.cfg.entry_node_id
+        presentation_cfg.exit_node_ids = self.cfg.exit_node_ids
+        presentation_cfg.exception_exit_node_ids = self.cfg.exception_exit_node_ids
+        presentation_cfg.source_location = self.cfg.source_location
+
+        # Add visible nodes
+        for nid, node in self.visible_nodes.items():
+            presentation_cfg.add_node(node)
+
+        # Add contracted edges
+        for edge in self.contracted_edges:
+            presentation_cfg.add_edge(edge)
+
+        return presentation_cfg
+
     def render(self) -> str:
-        """Render the CFG as SVG string."""
+        """Render the CFG as SVG string using contracted presentation graph."""
         # Calculate viewBox from actual node positions and dimensions
         min_x = float('inf')
         max_x = float('-inf')
@@ -62,12 +93,13 @@ class SVGRenderer:
         ]
 
         # Add edges first (so they appear behind nodes)
-        for edge in self.cfg.edges:
+        # Use contracted edges from presentation graph
+        for edge in self.contracted_edges:
             svg_parts.append(self._render_edge(edge))
 
-        # Add nodes
-        for node_id, node in self.cfg.nodes.items():
-            svg_parts.append(self._render_node(node_id, node))
+        # Add nodes (only visible nodes)
+        for node_id in self.visible_nodes.keys():
+            svg_parts.append(self._render_node(node_id, self.visible_nodes[node_id]))
 
         svg_parts.extend(['</g>', '</svg>'])
 
@@ -98,7 +130,7 @@ class SVGRenderer:
         '''
 
     def _render_node(self, node_id: str, node: CFGNode) -> str:
-        """Render a single node using pre-calculated dimensions."""
+        """Render a single node using pre-calculated dimensions and wrapped labels."""
         if node_id not in self.positions:
             return ""
 
@@ -130,26 +162,8 @@ class SVGRenderer:
         else:
             shape_class = "statement-node"
 
-        # Escape label and wrap text
-        safe_label = html_module.escape(node.label)
-
-        # Wrap text using same algorithm as layout
-        max_chars_per_line = 16
-        if len(safe_label) > max_chars_per_line:
-            words = safe_label.split()
-            lines = []
-            current_line = []
-            for word in words:
-                if sum(len(w) for w in current_line) + len(current_line) + len(word) > max_chars_per_line:
-                    if current_line:
-                        lines.append(' '.join(current_line))
-                    current_line = [word]
-                else:
-                    current_line.append(word)
-            if current_line:
-                lines.append(' '.join(current_line))
-        else:
-            lines = [safe_label]
+        # Use pre-wrapped lines from layout
+        lines = self.wrapped_labels.get(node_id, [html_module.escape(node.label)])
 
         # Create rectangle node (use pre-calculated dimensions)
         svg_node = [
@@ -159,10 +173,15 @@ class SVGRenderer:
             f'class="{shape_class}" rx="5"/>',
         ]
 
-        # Add text lines
+        # Add text lines - center them vertically within the node
+        line_height = 14.0
+        num_lines = len(lines)
         for i, line in enumerate(lines):
-            text_y = y + (i - len(lines)/2 + 0.5) * 14 + 4
-            svg_node.append(f'  <text x="{x}" y="{text_y}" class="node-label">{line}</text>')
+            # Center lines vertically: position at y + offset for each line
+            # offset = (i - (num_lines-1)/2) * line_height
+            text_y = y + (i - (num_lines - 1) / 2) * line_height + 4
+            safe_line = html_module.escape(line)
+            svg_node.append(f'  <text x="{x}" y="{text_y}" class="node-label">{safe_line}</text>')
 
         # Add source reference as tooltip
         if node.source_location:
