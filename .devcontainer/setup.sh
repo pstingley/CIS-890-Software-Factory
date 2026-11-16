@@ -135,6 +135,21 @@ install_python_tools() {
   echo "Python development tools installed in ${venv_dir}"
 }
 
+# Install CodeFlow's runtime dependencies into the shared project venv.
+install_codeflow() {
+  log "Installing CodeFlow dependencies"
+
+  local python="${REPO_ROOT}/.venv/bin/python"
+  local codeflow_dir="${REPO_ROOT}/tools/codeflow"
+
+  [[ -f "${codeflow_dir}/requirements.txt" ]] ||
+    die "CodeFlow requirements.txt not found."
+
+  "${python}" -m pip install -r "${codeflow_dir}/requirements.txt"
+
+  echo "CodeFlow dependencies installed."
+}
+
 # Only reports on these directories. It must never create or change them.
 check_project_dirs() {
   log "Checking existing project directories"
@@ -157,6 +172,17 @@ check() {
     printf '  %-16s FAILED: %s\n' "${label}" "$*"
     failures=$((failures + 1))
   fi
+}
+
+verify_codeflow() {
+  log "Verifying CodeFlow"
+
+  (
+    cd "${REPO_ROOT}/tools/codeflow"
+    "${REPO_ROOT}/.venv/bin/python" -m codeflow --help
+  ) >/dev/null || die "CodeFlow CLI verification failed."
+
+  echo "CodeFlow CLI verified."
 }
 
 verify_tools() {
@@ -253,8 +279,10 @@ main() {
   install_openspec
   install_claude_code
   install_python_tools
+  install_codeflow
   check_project_dirs
   verify_tools
+  verify_codeflow
   verify_openspec_pin
   verify_openspec_telemetry
   verify_claude_storage
