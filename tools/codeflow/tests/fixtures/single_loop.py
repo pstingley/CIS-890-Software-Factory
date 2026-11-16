@@ -8,6 +8,5 @@ def single_loop():
     print(total)
     return total
 
-
 # Expected edges:
 # Entry -> total=0 -> for i in range(10) -> loop body: total+=i -> loop back -> exit loop -> print(total) -> return -> Exit

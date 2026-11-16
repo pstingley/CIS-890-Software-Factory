@@ -1,0 +1,11 @@
+# CodeFlow Requirements
+# Required for Python analysis
+# (No external dependencies for Python analyzer)
+
+# Required for Rust analysis (Phase 2+)
+tree-sitter==0.21.1
+tree-sitter-rust==0.21.1
+
+# Optional for Word documentation output (Phase 3+)
+# Uncomment or install separately if needed:
+# python-docx>=0.8.10

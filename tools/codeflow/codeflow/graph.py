@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Set, Optional, Tuple
 
-
 class NodeType(Enum):
     """Types of CFG nodes."""
     ENTRY = "entry"
@@ -16,7 +15,6 @@ class NodeType(Enum):
     CALL = "call"
     EXCEPTION = "exception"
 
-
 class EdgeType(Enum):
     """Types of CFG edges."""
     NORMAL = "normal"
@@ -27,7 +25,6 @@ class EdgeType(Enum):
     EXCEPTION = "exception"
     LOOP_BACK = "loop_back"
 
-
 @dataclass
 class SourceLocation:
     """Source code location reference."""
@@ -35,7 +32,6 @@ class SourceLocation:
     start_line: int
     end_line: int
     source_code: str = ""
-
 
 @dataclass
 class CFGNode:
@@ -45,7 +41,7 @@ class CFGNode:
     node_type: NodeType
     source_location: Optional[SourceLocation] = None
     is_exceptional_exit: bool = False
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON export."""
         return {
@@ -61,7 +57,6 @@ class CFGNode:
             "exceptional_exit": self.is_exceptional_exit,
         }
 
-
 @dataclass
 class CFGEdge:
     """An edge in the control-flow graph."""
@@ -69,7 +64,7 @@ class CFGEdge:
     target_id: str
     label: str = ""
     edge_type: EdgeType = EdgeType.NORMAL
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON export."""
         return {
@@ -78,7 +73,6 @@ class CFGEdge:
             "label": self.label,
             "type": self.edge_type.value,
         }
-
 
 @dataclass
 class CFG:
@@ -92,20 +86,20 @@ class CFG:
     source_location: Optional[SourceLocation] = None
     is_partial: bool = False
     partial_reason: str = ""
-    
+
     def add_node(self, node: CFGNode) -> None:
         """Add a node to the graph."""
         self.nodes[node.id] = node
-    
+
     def add_edge(self, edge: CFGEdge) -> None:
         """Add an edge to the graph."""
         self.edges.append(edge)
-    
-    def add_edge_simple(self, source_id: str, target_id: str, 
+
+    def add_edge_simple(self, source_id: str, target_id: str,
                         label: str = "", edge_type: EdgeType = EdgeType.NORMAL) -> None:
         """Add an edge by IDs."""
         self.add_edge(CFGEdge(source_id, target_id, label, edge_type))
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON export."""
         return {
@@ -124,17 +118,19 @@ class CFG:
             "partial_reason": self.partial_reason if self.is_partial else "",
         }
 
-
 @dataclass
 class AnalysisResult:
-    """Result of analyzing a Python source file."""
+    """Result of analyzing a source file."""
     file_path: str
     functions: Dict[str, CFG] = field(default_factory=dict)
     module_cfg: Optional[CFG] = None
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     success: bool = True
-    
+    source_references: Dict[str, Tuple[str, int]] = field(default_factory=dict)
+    ambiguity_flags: List[str] = field(default_factory=list)
+    analysis_incomplete: bool = False
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON export."""
         return {
@@ -144,4 +140,7 @@ class AnalysisResult:
             "module": self.module_cfg.to_dict() if self.module_cfg else None,
             "errors": self.errors,
             "warnings": self.warnings,
+            "source_references": self.source_references,
+            "ambiguity_flags": self.ambiguity_flags,
+            "analysis_incomplete": self.analysis_incomplete,
         }

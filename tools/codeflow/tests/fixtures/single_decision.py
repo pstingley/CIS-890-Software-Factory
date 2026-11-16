@@ -8,7 +8,6 @@ def single_decision(x):
         result = "non-positive"
     return result
 
-
 # Expected edges:
 # Entry -> if x>0 (decision) -> true: result="positive" -> merge -> return result -> Exit
 #                            -> false: result="non-positive" -> merge
