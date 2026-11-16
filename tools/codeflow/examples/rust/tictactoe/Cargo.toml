@@ -1,0 +1,14 @@
+[package]
+name = "tictactoe"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "tictactoe"
+path = "src/main.rs"
+
+[dependencies]
+
+[lib]
+name = "tictactoe"
+path = "src/lib.rs"

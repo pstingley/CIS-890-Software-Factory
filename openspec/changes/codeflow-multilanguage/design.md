@@ -16,35 +16,40 @@ Current structure:
 - `codeflow/analyzers/python_analyzer.py`: Python-specific AST walking
 - `codeflow/specification.py`: Markdown specification handling
 
-**Regression Baseline**: 32 Python regression tests across 5 test files; all must pass unchanged (primary validation gate for backward compatibility).
+**Regression Baseline**: 41 Python and SPEC.md regression tests across 5+ test files; all must pass unchanged (primary validation gate for backward compatibility).
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Add Rust (.rs) as a third first-class input type equal to SPEC.md and Python
-- Each input type (SPEC.md, Python, Rust) produces:
+- Add Rust (.rs) and PHP (.php) as third and fourth first-class input types equal to SPEC.md and Python
+- Each input type (SPEC.md, Python, Rust, PHP) produces:
   - Native CodeFlow SVG/HTML flowchart using existing rendering conventions
   - Optional human-readable document (Markdown or Word, where dependencies permit)
 - Introduce a pluggable analyzer architecture enabling new language support without core CLI/ReportGenerator changes
 - Support Rust-specific constructs: if/else, match expressions with patterns/guards, loops, error propagation (?), function boundaries
-- Preserve Python analysis behavior exactly; all 32 regression tests pass unchanged
-- Unified optional documentation generation (Markdown/Word) for SPEC.md, Python, and Rust
-- Source traceability: preserve specification IDs, Python/Rust file/line references
+- Support PHP-specific constructs: functions, classes, methods, namespaces, if/else, switch/match, loops, exceptions, calls; multi-file projects via include/require and Composer
+- Support project-level analysis for Python, Rust, and PHP with entry-point discovery and cross-file relationships
+- Preserve Python and SPEC.md analysis behavior exactly; all 41 regression tests pass unchanged
+- Unified optional documentation generation (Markdown/Word) for SPEC.md, Python, Rust, and PHP
+- Source traceability: preserve specification IDs, Python/Rust/PHP file/line references
 - Support optional comparison/traceability as a review aid (not equivalence proof)
 - Maintain CLI backward compatibility; existing commands work unchanged
-- Clearly distinguish specification intent, implementation behavior, and unverified assumptions
-- Document all new dependencies (tree-sitter, python-docx) and how they will be included in the Software Factory container
+- Clearly distinguish specification intent, implementation behavior, unverified assumptions, and dynamic/uncertain behavior
+- Document all new dependencies (tree-sitter with Rust and PHP grammars, python-docx) and how they will be included in the Software Factory container
 
 **Non-Goals:**
-- Async/await analysis beyond basic structural representation
-- Macro expansion or procedural macro analysis
-- Complex generic constraint resolution
-- Closure capture analysis beyond basic detection
+- Async/await analysis beyond basic structural representation (Rust) or beyond basic detection (PHP)
+- Macro expansion or procedural macro analysis (Rust)
+- Complex generic constraint resolution (Rust)
+- Closure capture analysis beyond basic detection (Rust)
 - Full Rust edition support details (focus on common patterns)
+- Dynamic code execution analysis or full reflection resolution (PHP)
+- Framework-specific routing or dispatcher resolution (PHP)
+- Behavioral equivalence proof between specification and implementation
 - Performance profiling or optimization suggestions
 - IDE integration or real-time/incremental analysis
-- Behavioral equivalence proof between specification and implementation
 - Modify Software Factory core or rebuild container during planning
+- Support for all PHP versions; focus on PHP 7.4+ (current LTS)
 
 ## Decisions
 
