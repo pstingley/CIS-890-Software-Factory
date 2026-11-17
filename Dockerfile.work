@@ -1,0 +1,32 @@
+
+FROM doi-cio-base:1.0
+
+USER root
+
+ENV OPENSPEC_TELEMETRY=0 \
+    CLAUDE_CONFIG_DIR=/home/vscode/.claude \
+    PATH="/home/vscode/.local/bin:/home/vscode/.elan/bin:/home/vscode/.cargo/bin:${PATH}"
+
+RUN mkdir -p /opt/doi-cio /home/vscode/.claude \
+    && chown -R vscode:vscode /opt/doi-cio /home/vscode/.claude
+
+USER vscode
+WORKDIR /opt/doi-cio
+
+COPY --chown=vscode:vscode . .
+
+# Runtime-only checks cannot run during a Docker image build.
+RUN sed -i \
+    -e '/^  verify_claude_storage$/d' \
+    -e '/^  verify_docker_daemon$/d' \
+    .devcontainer/setup.sh
+
+# Install Basic and Advanced Software Factory tools.
+RUN bash .devcontainer/setup.sh \
+    && bash .devcontainer/setup-advanced.sh
+
+# Install Kiro CLI without authenticating.
+RUN curl -fsSL https://cli.kiro.dev/install | bash \
+    && kiro-cli --version
+
+CMD ["/bin/bash"]
