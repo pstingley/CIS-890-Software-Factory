@@ -31,7 +31,7 @@
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
   },
-  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postCreateCommand": "bash .devcontainer/setup.sh && bash .devcontainer/setup-advanced.sh",
   "customizations": {
     "vscode": {
       "extensions": [
