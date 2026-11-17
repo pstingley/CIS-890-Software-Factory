@@ -21,6 +21,9 @@ secrets.json
 .claude.json
 CLAUDE.local.md
 
+# Local GitLab integration and credentials
+.kiro/settings/mcp.json
+
 # Python virtual environments
 .venv/
 venv/

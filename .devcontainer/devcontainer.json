@@ -35,7 +35,8 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "anthropic.claude-code"
+        "anthropic.claude-code",
+        "GitLab.gitlab-workflow"
       ]
     }
   },

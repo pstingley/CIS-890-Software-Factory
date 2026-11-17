@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "DOI-GitLab": {
+      "url": "https://gitlab.example.com/api/v4/mcp",
+      "disabled": true,
+      "autoApprove": []
+    }
+  }
+}
