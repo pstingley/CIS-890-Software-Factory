@@ -142,6 +142,15 @@ main() {
   install_alloy
   install_apalache
   log 'Advanced formal-methods tool installation completed.'
+  log "Installing Advanced Python testing and contracts"
+  python3 -m venv "${REPO_ROOT}/.venv-advanced"
+  "${REPO_ROOT}/.venv-advanced/bin/python" -m pip install \
+    -r "${REPO_ROOT}/tools/advanced/requirements.txt"
+  log "Installing Cucumber-JS"
+  (
+    cd "${REPO_ROOT}/tools/advanced/cucumber"
+    npm ci
+  )
   bash "${REPO_ROOT}/.devcontainer/verify-advanced.sh"
 }
 

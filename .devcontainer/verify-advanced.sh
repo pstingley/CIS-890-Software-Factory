@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Verify tools installed by setup-advanced.sh; reports version and smoke checks.
 set -euo pipefail
+readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="${HOME}/.elan/bin:${HOME}/.cargo/bin:${HOME}/.local/bin:${PATH}"
 
 check() {
@@ -26,4 +27,8 @@ fi
 printf 'TLC:               CLI verified\n'
 check 'Alloy' java -jar /opt/alloy/alloy.jar version
 check 'Apalache' apalache-mc version
-printf '\nAll Advanced formal-methods command checks passed.\n'
+check 'pytest' "${REPO_ROOT}/.venv-advanced/bin/python" -m pytest --version
+check 'pytest-bdd' "${REPO_ROOT}/.venv-advanced/bin/python" -m pip show pytest-bdd
+check 'Deal' "${REPO_ROOT}/.venv-advanced/bin/python" -m pip show deal
+check 'Cucumber' "${REPO_ROOT}/tools/advanced/cucumber/node_modules/.bin/cucumber-js" --version
+printf '\nAll Advanced Software Factory command checks passed.\n'
