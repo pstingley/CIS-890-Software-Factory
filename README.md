@@ -1,6 +1,6 @@
 # Software Factory
 
-This repository contains the development environment for CIS 890 - Software Specification.
+This repository contains the development environment for Software Factory.
 
 Tools:
 - VSCode
